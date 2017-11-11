@@ -2,7 +2,7 @@
 
 src()
 {
-  cat flash_erase_20171111.csv
+  zcat flash_erase_20171111.csv.Z
 }
 
 analyzer()
