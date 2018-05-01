@@ -1,4 +1,4 @@
-import threading 
+import threading
 import socket
 import time
 import datetime
@@ -26,27 +26,32 @@ FLIP_CMD = 0x005c
 QUIT_CMD = 0x00ff
 
 log = logger.Logger('Tello')
-#log.setLevel(logger.LOG_ALL)
+# log.setLevel(logger.LOG_ALL)
+
 
 def little16(d):
-    return (d&0xff), ((d >> 8)&0xff)
+    return (d & 0xff), ((d >> 8) & 0xff)
+
 
 def int16(d0, d1):
-    return ((d0&0xff) | ((d1&0xff) << 8))
+    return ((d0 & 0xff) | ((d1 & 0xff) << 8))
+
 
 def byteToHexstring(s):
     if isinstance(s, str):
-        return ''.join( [ "%02x " % ord(x) for x in s ] ).strip()
+        return ''.join(["%02x " % ord(x) for x in s]).strip()
     else:
-        return ''.join( [ "%02x " % ord(chr(x)) for x in s ] ).strip()
+        return ''.join(["%02x " % ord(chr(x)) for x in s]).strip()
+
 
 def showException(e):
     log.error(str(e))
     exc_type, exc_value, exc_traceback = sys.exc_info()
     traceback.print_exception(exc_type, exc_value, exc_traceback)
 
+
 class Packet:
-    def __init__(self, cmd, type = 0x68):
+    def __init__(self, cmd, type=0x68):
         if isinstance(cmd, bytearray) or isinstance(cmd, str):
             self.buf = bytearray()
             self.buf[:] = cmd
@@ -56,7 +61,7 @@ class Packet:
                 0, 0,
                 0,
                 chr(type),
-                chr(cmd & 0xff), chr((cmd >> 8)&0xff),
+                chr(cmd & 0xff), chr((cmd >> 8) & 0xff),
                 0, 0])
 
     def getBuffer(self):
@@ -66,19 +71,20 @@ class Packet:
         return self.buf[9:len(self.buf)-2]
 
     def addByte(self, d):
-        self.buf.append(d&0xff)
+        self.buf.append(d & 0xff)
 
     def addInt16(self, d):
         self.addByte(d)
-        self.addByte(d>>8)
+        self.addByte(d >> 8)
 
-    def addTime(self, time = datetime.datetime.now()):
+    def addTime(self, time=datetime.datetime.now()):
         self.addByte(0)
         self.addInt16(time.hour)
         self.addInt16(time.minute)
         self.addInt16(time.second)
-        self.addInt16((time.microsecond/1000)&0xff)
-        self.addInt16(((time.microsecond/1000)>>8)&0xff)
+        self.addInt16((time.microsecond/1000) & 0xff)
+        self.addInt16(((time.microsecond/1000) >> 8) & 0xff)
+
 
 class FlightData:
     def __init__(self, data):
@@ -120,40 +126,40 @@ class FlightData:
         self.wifiStrength = 0
         self.windState = 0
 
-	if len(data) < 24:
+        if len(data) < 24:
             return
 
-        self.height      = int16(data[0], data[1])
-        self.northSpeed  = int16(data[2], data[3])
-        self.eastSpeed   = int16(data[4], data[5])
+        self.height = int16(data[0], data[1])
+        self.northSpeed = int16(data[2], data[3])
+        self.eastSpeed = int16(data[4], data[5])
         self.groundSpeed = int16(data[6], data[7])
-        self.flyTime     = int16(data[8], data[9])
+        self.flyTime = int16(data[8], data[9])
 
-	self.imuState        = ((data[10] >> 0) & 0x1)
-	self.pressureState   = ((data[10] >> 1) & 0x1)
-	self.downVisualState = ((data[10] >> 2) & 0x1)
-	self.powerState      = ((data[10] >> 3) & 0x1)
-	self.batteryState    = ((data[10] >> 4) & 0x1)
-	self.gravityState    = ((data[10] >> 5) & 0x1)
-	self.windState       = ((data[10] >> 7) & 0x1)
+        self.imuState = ((data[10] >> 0) & 0x1)
+        self.pressureState = ((data[10] >> 1) & 0x1)
+        self.downVisualState = ((data[10] >> 2) & 0x1)
+        self.powerState = ((data[10] >> 3) & 0x1)
+        self.batteryState = ((data[10] >> 4) & 0x1)
+        self.gravityState = ((data[10] >> 5) & 0x1)
+        self.windState = ((data[10] >> 7) & 0x1)
 
         self.imuCalibrationState = data[11]
         self.batteryPercentage = data[12]
         self.droneBatteryLeft = int16(data[13], data[14])
         self.droneFlyTimeLeft = int16(data[15], data[16])
 
-        self.eMSky           = ((data[17] >> 0) & 0x1)
-        self.eMGround        = ((data[17] >> 1) & 0x1)
-        self.eMOpen          = ((data[17] >> 2) & 0x1)
-        self.droneHover      = ((data[17] >> 3) & 0x1)
+        self.eMSky = ((data[17] >> 0) & 0x1)
+        self.eMGround = ((data[17] >> 1) & 0x1)
+        self.eMOpen = ((data[17] >> 2) & 0x1)
+        self.droneHover = ((data[17] >> 3) & 0x1)
         self.outageRecording = ((data[17] >> 4) & 0x1)
-        self.batteryLow      = ((data[17] >> 5) & 0x1)
-        self.batteryLower    = ((data[17] >> 6) & 0x1)
-        self.factoryMode     = ((data[17] >> 7) & 0x1)
+        self.batteryLow = ((data[17] >> 5) & 0x1)
+        self.batteryLower = ((data[17] >> 6) & 0x1)
+        self.factoryMode = ((data[17] >> 7) & 0x1)
 
-        self.flyMode       = data[18]
+        self.flyMode = data[18]
         self.throwFlyTimer = data[19]
-        self.cameraState   = data[20]
+        self.cameraState = data[20]
         self.electricalMachineryState = data[21]
 
         self.frontIn = ((data[22] >> 0) & 0x1)
@@ -169,6 +175,7 @@ class FlightData:
             ("droneBatteryLeft=%04x, " % self.droneBatteryLeft) +
             "")
 
+
 class Drone:
     def __init__(self):
         self.tello_addr = ('192.168.10.1', 8889)
@@ -177,10 +184,10 @@ class Drone:
         self.pkt_seq_num = 0x01e4
         threading.Thread(target=self.thread).start()
 
-    def connect(self, port = 9617):
+    def connect(self, port=9617):
         self.port = port
-        p0 = ((port/1000)%10)<<4|((port/ 100)%10)
-        p1 = ((port/  10)%10)<<4|((port/   1)%10)
+        p0 = ((port/1000) % 10) << 4 | ((port/100) % 10)
+        p1 = ((port/10) % 10) << 4 | ((port/1) % 10)
         buf = 'conn_req:%c%c' % (chr(p0), chr(p1))
         print '#### ok %s' % byteToHexstring('conn_req:\x86\x17')
         print '#### ng %s' % byteToHexstring(buf)
@@ -250,7 +257,6 @@ class Drone:
 
         return True
 
-        
     def thread(self):
         # Create a UDP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -265,8 +271,8 @@ class Drone:
             else:
                 cmd = None
 
-            if cmd != None:
-                if (cmd[5] | (cmd[6]<<8)) == QUIT_CMD:
+            if cmd is not None:
+                if (cmd[5] | (cmd[6] << 8)) == QUIT_CMD:
                     break
                 try:
                     # Send data
