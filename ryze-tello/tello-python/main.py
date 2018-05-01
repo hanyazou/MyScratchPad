@@ -10,6 +10,7 @@ import tello
 import pygame
 from pygame.locals import *
 
+
 class buttons:
     UP = 4
     RIGHT = 5
@@ -24,6 +25,7 @@ class buttons:
     CROSS = 14
     SQUARE = 15
 
+
 def main():
     pygame.init()
     pygame.joystick.init()
@@ -34,41 +36,61 @@ def main():
     except pygame.error:
         print 'no joystick found'
 
-    drone = tello.Tello()
+    drone = tello.Drone()
+    drone.connect()
 
-    while 1:
-        try:
+    try:
+        while 1:
             time.sleep(0.01)  # loop with pygame.event.get() is too mush tight w/o some sleep
             for e in pygame.event.get():
-                if e.type == pygame.locals.JOYAXISMOTION: # 7
-                    x , y = js.get_axis(0), js.get_axis(1)
+                if e.type == pygame.locals.JOYAXISMOTION:
+                    x, y = js.get_axis(0), js.get_axis(1)
                     # print 'x and y : ' + str(x) +' , '+ str(y)
-                elif e.type == pygame.locals.JOYBUTTONDOWN: # 10
-                    if e.button == buttons.L2:
-                        drone.command('takeoff')
-                    elif e.button == buttons.L1:
-                        drone.command('land')
+                elif e.type == pygame.locals.JOYBUTTONDOWN:
+                    if e.button == buttons.L1:
+                        drone.land()
                     elif e.button == buttons.UP:
-                        drone.command('up 20')
+                        drone.up(20)
                     elif e.button == buttons.DOWN:
-                        drone.command('down 20')
+                        drone.down(20)
                     elif e.button == buttons.RIGHT:
-                        drone.command('cw 20')
+                        drone.cw(20)
                     elif e.button == buttons.LEFT:
-                        drone.command('ccw 20')
+                        drone.ccw(20)
                     elif e.button == buttons.TRIANGLE:
-                        drone.command('forward 20')
+                        drone.forward(20)
                     elif e.button == buttons.CROSS:
-                        drone.command('back 20')
+                        drone.backfard(20)
                     elif e.button == buttons.CIRCLE:
-                        drone.command('right 20')
+                        drone.right(20)
                     elif e.button == buttons.SQUARE:
-                        drone.command('left 20')
+                        drone.left(20)
                 elif e.type == pygame.locals.JOYBUTTONUP:
-                    drone.disableRepeat()
-        except KeyboardInterrupt, e:
-            print (e)
-            drone.command('quit')
-            exit(1)
+                    if e.button == buttons.L2:
+                        drone.takeoff()
+                    elif e.button == buttons.UP:
+                        drone.up(0)
+                    elif e.button == buttons.DOWN:
+                        drone.down(0)
+                    elif e.button == buttons.RIGHT:
+                        drone.cw(0)
+                    elif e.button == buttons.LEFT:
+                        drone.ccw(0)
+                    elif e.button == buttons.TRIANGLE:
+                        drone.forward(0)
+                    elif e.button == buttons.CROSS:
+                        drone.backfard(0)
+                    elif e.button == buttons.CIRCLE:
+                        drone.right(0)
+                    elif e.button == buttons.SQUARE:
+                        drone.left(0)
+    except KeyboardInterrupt, e:
+        print (e)
+    except Exception, e:
+        print (e)
 
-if __name__ == '__main__': main()
+    drone.quit()
+    exit(1)
+
+if __name__ == '__main__':
+    main()
