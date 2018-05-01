@@ -4,9 +4,13 @@ import time
 import datetime
 import sys
 import traceback
+import louie.dispatcher as dispatcher
 
 import crc
 import logger
+import event
+
+log = logger.Logger('Tello')
 
 START_OF_PACKET = 0xcc
 WIFI_MSG = 0x1a
@@ -24,9 +28,6 @@ TAKEOFF_CMD = 0x0054
 LAND_CMD = 0x0055
 FLIP_CMD = 0x005c
 QUIT_CMD = 0x00ff
-
-log = logger.Logger('Tello')
-# log.setLevel(logger.LOG_ALL)
 
 
 def little16(d):
@@ -177,6 +178,18 @@ class FlightData:
 
 
 class Drone:
+    CONNECTED_EVENT = event.Event('connected')
+    WIFI_EVENT = event.Event('wifi')
+    LIGHT_EVENT = event.Event('light')
+    FLIGHT_EVENT = event.Event('fligt')
+    LOG_EVENT = event.Event('log')
+
+    LOG_ERROR = logger.LOG_ERROR
+    LOG_WARN = logger.LOG_WARN
+    LOG_INFO = logger.LOG_INFO
+    LOG_DEBUG = logger.LOG_DEBUG
+    LOG_ALL = logger.LOG_ALL
+
     def __init__(self):
         self.tello_addr = ('192.168.10.1', 8889)
         self.debug = False
@@ -184,34 +197,43 @@ class Drone:
         self.pkt_seq_num = 0x01e4
         threading.Thread(target=self.thread).start()
 
+    def set_loglevel(self, level):
+        log.setLevel(level)
+
     def connect(self, port=9617):
         self.port = port
         p0 = ((port/1000) % 10) << 4 | ((port/100) % 10)
         p1 = ((port/10) % 10) << 4 | ((port/1) % 10)
         buf = 'conn_req:%c%c' % (chr(p0), chr(p1))
-        print '#### ok %s' % byteToHexstring('conn_req:\x86\x17')
-        print '#### ng %s' % byteToHexstring(buf)
         log.info('connect (cmd="%s")' % str(buf))
         self.enqueuePacket(Packet(buf))
 
+    def on(self, signal, handler):
+        dispatcher.connect(handler, signal, sender=self)
+
+    def publish(self, event, **args):
+        args.update({'event': event, 'port': self.port})
+        log.debug('publish signal=%s, args=%s' % (event, args))
+        dispatcher.send(signal=event, sender=self, **args)
+
     def takeoff(self):
-        log.info('takemoff (cmd=%02x)' % TAKEOFF_CMD)
+        log.info('takemoff (cmd=0x%02x)' % TAKEOFF_CMD)
         pkt = Packet(TAKEOFF_CMD)
         self.enqueuePacket(pkt)
 
     def land(self):
-        log.info('land (cmd=%02x)' % LAND_CMD)
+        log.info('land (cmd=0x%02x)' % LAND_CMD)
         pkt = Packet(LAND_CMD)
         pkt.addByte(0x00)
         self.enqueuePacket(pkt)
 
     def quit(self):
-        log.info('land (cmd=QUIT)')
+        log.info('quit (cmd=QUIT)')
         pkt = Packet(QUIT_CMD)
         self.enqueuePacket(pkt)
 
     def sendTime(self):
-        log.info('sendTime (cmd=%02x)' % TIME_CMD)
+        log.info('sendTime (cmd=0x%02x)' % TIME_CMD)
         pkt = Packet(TIME_CMD, 0x50)
         pkt.addTime()
         self.enqueuePacket(pkt)
@@ -234,6 +256,7 @@ class Drone:
         if str(data[0:9]) == 'conn_ack:':
             log.info('connected. (port=%2x%2x)' % (data[9], data[10]))
             log.debug('    %s' % byteToHexstring(data))
+            self.publish(event=self.CONNECTED_EVENT, data=data)
             return
         if data[0] != START_OF_PACKET:
             log.info('start of packet != %02x (%02x) (ignored)' % (START_OF_PACKET, data[0]))
@@ -243,14 +266,18 @@ class Drone:
 
         cmd = int16(data[5], data[6])
         if cmd == LOG_MSG:
-            log.info("recv: log: ...")
+            log.debug("recv: log: %s" % byteToHexstring(data[9:]))
+            self.publish(event=self.LOG_EVENT, data=data[9:])
         elif cmd == WIFI_MSG:
-            log.info("recv: wifi: ...")
+            log.debug("recv: wifi: %s" % byteToHexstring(data[9:]))
+            self.publish(event=self.WIFI_EVENT, data=data[9:])
         elif cmd == LIGHT_MSG:
-            log.info("recv: light: ...")
+            log.debug("recv: light: %s" % byteToHexstring(data[9:]))
+            self.publish(event=self.LIGHT_EVENT, data=data[9:])
         elif cmd == FLIGHT_MSG:
             flight_data = FlightData(data[9:])
-            log.info("recv: flight data: %s" % str(flight_data))
+            log.debug("recv: flight data: %s" % str(flight_data))
+            self.publish(event=self.FLIGHT_EVENT, data=flight_data)
         else:
             log.info('unknown packet: %s' % byteToHexstring(data))
             return False
@@ -281,11 +308,11 @@ class Drone:
                     self.cmd = None
                     log.debug("self.cmd = None")
                 except KeyboardInterrupt, e:
-                    log.info(e)
+                    showException(e)
                     exit(1)
                 except Exception, e:
                     log.error("   send: %s: " % byteToHexstring(cmd))
-                    log.error(str(e))
+                    showException(e)
                     time.sleep(3.0)
                     continue
 
@@ -301,17 +328,27 @@ class Drone:
                 data = None
             except Exception, e:
                 log.error('   recv: ')
-                log.error(str(e))
+                showException(e)
 
-        print ('tello: exit from the thread.')
+        log.info('exit from the thread.')
 
 if __name__ == '__main__':
+    def handler(event, sender, data, **args):
+        print 'event="%s" data=%s' % (event.getname(), str(data))
+
+    d = Drone()
     try:
-        d = Drone()
+        # d.set_loglevel(d.LOG_ALL)
+        d.on(d.CONNECTED_EVENT, handler)
+        # d.on(d.WIFI_EVENT, handler)
+        # d.on(d.LIGHT_EVENT, handler)
+        d.on(d.FLIGHT_EVENT, handler)
+        # d.on(d.LOG_EVENT, handler)
+
         d.connect()
         time.sleep(2)
         d.sendTime()
-#        d.takeoff()
+        # d.takeoff()
         time.sleep(5)
         d.land()
         time.sleep(5)
