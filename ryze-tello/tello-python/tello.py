@@ -30,30 +30,30 @@ FLIP_CMD = 0x005c
 QUIT_CMD = 0x00ff
 
 
-def little16(d):
-    return (d & 0xff), ((d >> 8) & 0xff)
+def little16(val):
+    return (val & 0xff), ((val >> 8) & 0xff)
 
 
-def int16(d0, d1):
-    return ((d0 & 0xff) | ((d1 & 0xff) << 8))
+def int16(val0, val1):
+    return (val0 & 0xff) | ((val1 & 0xff) << 8)
 
 
-def byteToHexstring(s):
-    if isinstance(s, str):
-        return ''.join(["%02x " % ord(x) for x in s]).strip()
-    else:
-        return ''.join(["%02x " % ord(chr(x)) for x in s]).strip()
+def byte_to_hexstring(buf):
+    if isinstance(buf, str):
+        return ''.join(["%02x " % ord(x) for x in buf]).strip()
+
+    return ''.join(["%02x " % ord(chr(x)) for x in buf]).strip()
 
 
-def showException(e):
-    log.error(str(e))
+def show_exception(ex):
+    log.error(str(ex))
     exc_type, exc_value, exc_traceback = sys.exc_info()
     traceback.print_exception(exc_type, exc_value, exc_traceback)
 
 
-class Packet:
-    def __init__(self, cmd, type=0x68):
-        if isinstance(cmd, bytearray) or isinstance(cmd, str):
+class Packet(object):
+    def __init__(self, cmd, pkt_type=0x68):
+        if isinstance(cmd, (bytearray, str)):
             self.buf = bytearray()
             self.buf[:] = cmd
         else:
@@ -61,123 +61,123 @@ class Packet:
                 chr(START_OF_PACKET),
                 0, 0,
                 0,
-                chr(type),
+                chr(pkt_type),
                 chr(cmd & 0xff), chr((cmd >> 8) & 0xff),
                 0, 0])
 
-    def getBuffer(self):
+    def get_buffer(self):
         return self.buf
 
-    def getData(self):
+    def get_data(self):
         return self.buf[9:len(self.buf)-2]
 
-    def addByte(self, d):
-        self.buf.append(d & 0xff)
+    def add_byte(self, val):
+        self.buf.append(val & 0xff)
 
-    def addInt16(self, d):
-        self.addByte(d)
-        self.addByte(d >> 8)
+    def add_int16(self, val):
+        self.add_byte(val)
+        self.add_byte(val >> 8)
 
-    def addTime(self, time=datetime.datetime.now()):
-        self.addByte(0)
-        self.addInt16(time.hour)
-        self.addInt16(time.minute)
-        self.addInt16(time.second)
-        self.addInt16((time.microsecond/1000) & 0xff)
-        self.addInt16(((time.microsecond/1000) >> 8) & 0xff)
+    def add_time(self, time=datetime.datetime.now()):
+        self.add_byte(0)
+        self.add_int16(time.hour)
+        self.add_int16(time.minute)
+        self.add_int16(time.second)
+        self.add_int16((time.microsecond/1000) & 0xff)
+        self.add_int16(((time.microsecond/1000) >> 8) & 0xff)
 
 
-class FlightData:
+class FlightData(object):
     def __init__(self, data):
-        self.batteryLow = 0
-        self.batteryLower = 0
-        self.batteryPercentage = 0
-        self.batteryState = 0
-        self.cameraState = 0
-        self.downVisualState = 0
-        self.droneBatteryLeft = 0
-        self.droneFlyTimeLeft = 0
-        self.droneHover = 0
-        self.eMOpen = 0
-        self.eMSky = 0
-        self.eMGround = 0
-        self.eastSpeed = 0
-        self.electricalMachineryState = 0
-        self.factoryMode = 0
-        self.flyMode = 0
-        self.flySpeed = 0
-        self.flyTime = 0
-        self.frontIn = 0
-        self.frontLSC = 0
-        self.frontOut = 0
-        self.gravityState = 0
-        self.groundSpeed = 0
+        self.battery_low = 0
+        self.battery_lower = 0
+        self.battery_percentage = 0
+        self.battery_state = 0
+        self.camera_state = 0
+        self.down_visual_state = 0
+        self.drone_battery_left = 0
+        self.drone_fly_time_left = 0
+        self.drone_hover = 0
+        self.em_open = 0
+        self.em_sky = 0
+        self.em_ground = 0
+        self.east_speed = 0
+        self.electrical_machinery_state = 0
+        self.factory_mode = 0
+        self.fly_mode = 0
+        self.fly_speed = 0
+        self.fly_time = 0
+        self.front_in = 0
+        self.front_lsc = 0
+        self.front_out = 0
+        self.gravity_state = 0
+        self.ground_speed = 0
         self.height = 0
-        self.imuCalibrationState = 0
-        self.imuState = 0
-        self.lightStrength = 0
-        self.northSpeed = 0
-        self.outageRecording = 0
-        self.powerState = 0
-        self.pressureState = 0
-        self.smartVideoExitMode = 0
-        self.temperatureHeight = 0
-        self.throwFlyTimer = 0
-        self.wifiDisturb = 0
-        self.wifiStrength = 0
-        self.windState = 0
+        self.imu_calibration_state = 0
+        self.imu_state = 0
+        self.light_strength = 0
+        self.north_speed = 0
+        self.outage_recording = 0
+        self.power_state = 0
+        self.pressure_state = 0
+        self.smart_video_exit_mode = 0
+        self.temperature_height = 0
+        self.throw_fly_timer = 0
+        self.wifi_disturb = 0
+        self.wifi_strength = 0
+        self.wind_state = 0
 
         if len(data) < 24:
             return
 
         self.height = int16(data[0], data[1])
-        self.northSpeed = int16(data[2], data[3])
-        self.eastSpeed = int16(data[4], data[5])
-        self.groundSpeed = int16(data[6], data[7])
-        self.flyTime = int16(data[8], data[9])
+        self.north_speed = int16(data[2], data[3])
+        self.east_speed = int16(data[4], data[5])
+        self.ground_speed = int16(data[6], data[7])
+        self.fly_time = int16(data[8], data[9])
 
-        self.imuState = ((data[10] >> 0) & 0x1)
-        self.pressureState = ((data[10] >> 1) & 0x1)
-        self.downVisualState = ((data[10] >> 2) & 0x1)
-        self.powerState = ((data[10] >> 3) & 0x1)
-        self.batteryState = ((data[10] >> 4) & 0x1)
-        self.gravityState = ((data[10] >> 5) & 0x1)
-        self.windState = ((data[10] >> 7) & 0x1)
+        self.imu_state = ((data[10] >> 0) & 0x1)
+        self.pressure_state = ((data[10] >> 1) & 0x1)
+        self.down_visual_state = ((data[10] >> 2) & 0x1)
+        self.power_state = ((data[10] >> 3) & 0x1)
+        self.battery_state = ((data[10] >> 4) & 0x1)
+        self.gravity_state = ((data[10] >> 5) & 0x1)
+        self.wind_state = ((data[10] >> 7) & 0x1)
 
-        self.imuCalibrationState = data[11]
-        self.batteryPercentage = data[12]
-        self.droneBatteryLeft = int16(data[13], data[14])
-        self.droneFlyTimeLeft = int16(data[15], data[16])
+        self.imu_calibration_state = data[11]
+        self.battery_percentage = data[12]
+        self.drone_battery_left = int16(data[13], data[14])
+        self.drone_fly_time_left = int16(data[15], data[16])
 
-        self.eMSky = ((data[17] >> 0) & 0x1)
-        self.eMGround = ((data[17] >> 1) & 0x1)
-        self.eMOpen = ((data[17] >> 2) & 0x1)
-        self.droneHover = ((data[17] >> 3) & 0x1)
-        self.outageRecording = ((data[17] >> 4) & 0x1)
-        self.batteryLow = ((data[17] >> 5) & 0x1)
-        self.batteryLower = ((data[17] >> 6) & 0x1)
-        self.factoryMode = ((data[17] >> 7) & 0x1)
+        self.em_sky = ((data[17] >> 0) & 0x1)
+        self.em_ground = ((data[17] >> 1) & 0x1)
+        self.em_open = ((data[17] >> 2) & 0x1)
+        self.drone_hover = ((data[17] >> 3) & 0x1)
+        self.outage_recording = ((data[17] >> 4) & 0x1)
+        self.battery_low = ((data[17] >> 5) & 0x1)
+        self.battery_lower = ((data[17] >> 6) & 0x1)
+        self.factory_mode = ((data[17] >> 7) & 0x1)
 
-        self.flyMode = data[18]
-        self.throwFlyTimer = data[19]
-        self.cameraState = data[20]
-        self.electricalMachineryState = data[21]
+        self.fly_mode = data[18]
+        self.throw_fly_timer = data[19]
+        self.camera_state = data[20]
+        self.electrical_machinery_state = data[21]
 
-        self.frontIn = ((data[22] >> 0) & 0x1)
-        self.frontOut = ((data[22] >> 1) & 0x1)
-        self.frontLSC = ((data[22] >> 2) & 0x1)
+        self.front_in = ((data[22] >> 0) & 0x1)
+        self.front_out = ((data[22] >> 1) & 0x1)
+        self.front_lsc = ((data[22] >> 2) & 0x1)
 
-        self.temperatureHeight = ((data[23] >> 0) & 0x1)
+        self.temperature_height = ((data[23] >> 0) & 0x1)
 
     def __str__(self):
         return (
-            ("height=%04x, " % self.height) +
-            ("batteryPercentage=%02x, " % self.batteryPercentage) +
-            ("droneBatteryLeft=%04x, " % self.droneBatteryLeft) +
+            ("height=%04x" % self.height) +
+            (", battery_percentage=%02x" % self.battery_percentage) +
+            (", drone_battery_left=%04x" % self.drone_battery_left) +
             "")
 
 
-class Drone:
+class Drone(object):
     CONNECTED_EVENT = event.Event('connected')
     WIFI_EVENT = event.Event('wifi')
     LIGHT_EVENT = event.Event('light')
@@ -190,25 +190,26 @@ class Drone:
     LOG_DEBUG = logger.LOG_DEBUG
     LOG_ALL = logger.LOG_ALL
 
-    def __init__(self):
+    def __init__(self, port=9617):
         self.tello_addr = ('192.168.10.1', 8889)
         self.debug = False
         self.cmd = None
         self.pkt_seq_num = 0x01e4
+        self.port = port
         threading.Thread(target=self.thread).start()
 
     def set_loglevel(self, level):
-        log.setLevel(level)
+        log.set_level(level)
 
-    def connect(self, port=9617):
-        self.port = port
-        p0 = ((port/1000) % 10) << 4 | ((port/100) % 10)
-        p1 = ((port/10) % 10) << 4 | ((port/1) % 10)
-        buf = 'conn_req:%c%c' % (chr(p0), chr(p1))
+    def connect(self):
+        port = self.port
+        port0 = ((port/1000) % 10) << 4 | ((port/100) % 10)
+        port1 = ((port/10) % 10) << 4 | ((port/1) % 10)
+        buf = 'conn_req:%c%c' % (chr(port0), chr(port1))
         log.info('connect (cmd="%s")' % str(buf))
-        self.enqueuePacket(Packet(buf))
+        self.enqueue_packet(Packet(buf))
 
-    def on(self, signal, handler):
+    def subscribe(self, signal, handler):
         dispatcher.connect(handler, signal, sender=self)
 
     def publish(self, event, **args):
@@ -219,67 +220,67 @@ class Drone:
     def takeoff(self):
         log.info('takemoff (cmd=0x%02x)' % TAKEOFF_CMD)
         pkt = Packet(TAKEOFF_CMD)
-        self.enqueuePacket(pkt)
+        self.enqueue_packet(pkt)
 
     def land(self):
         log.info('land (cmd=0x%02x)' % LAND_CMD)
         pkt = Packet(LAND_CMD)
-        pkt.addByte(0x00)
-        self.enqueuePacket(pkt)
+        pkt.add_byte(0x00)
+        self.enqueue_packet(pkt)
 
     def quit(self):
         log.info('quit (cmd=QUIT)')
         pkt = Packet(QUIT_CMD)
-        self.enqueuePacket(pkt)
+        self.enqueue_packet(pkt)
 
-    def sendTime(self):
-        log.info('sendTime (cmd=0x%02x)' % TIME_CMD)
+    def send_time(self):
+        log.info('send_time (cmd=0x%02x)' % TIME_CMD)
         pkt = Packet(TIME_CMD, 0x50)
-        pkt.addTime()
-        self.enqueuePacket(pkt)
+        pkt.add_time()
+        self.enqueue_packet(pkt)
 
-    def enqueuePacket(self, pkt):
-        buf = pkt.getBuffer()
+    def enqueue_packet(self, pkt):
+        buf = pkt.get_buffer()
         if buf[0] == START_OF_PACKET:
             buf[1], buf[2] = little16(len(buf)+2)
             buf[1] = (buf[1] << 3)
             buf[3] = crc.crc8(buf[0:3])
             buf[7], buf[8] = little16(self.pkt_seq_num)
             self.pkt_seq_num = self.pkt_seq_num + 1
-            pkt.addInt16(crc.crc16(buf))
-        log.debug("tello: enqueue: %s" % byteToHexstring(buf))
+            pkt.add_int16(crc.crc16(buf))
+        log.debug("tello: enqueue: %s" % byte_to_hexstring(buf))
         self.cmd = pkt
 
-    def processPacket(self, data):
+    def process_packet(self, data):
         if isinstance(data, str):
             data = bytearray([x for x in data])
         if str(data[0:9]) == 'conn_ack:':
             log.info('connected. (port=%2x%2x)' % (data[9], data[10]))
-            log.debug('    %s' % byteToHexstring(data))
+            log.debug('    %s' % byte_to_hexstring(data))
             self.publish(event=self.CONNECTED_EVENT, data=data)
-            return
+            return True
         if data[0] != START_OF_PACKET:
             log.info('start of packet != %02x (%02x) (ignored)' % (START_OF_PACKET, data[0]))
-            log.info('    %s' % byteToHexstring(data))
+            log.info('    %s' % byte_to_hexstring(data))
             log.info('    %s' % str(map(chr, data))[1:-1])
             return False
 
         cmd = int16(data[5], data[6])
         if cmd == LOG_MSG:
-            log.debug("recv: log: %s" % byteToHexstring(data[9:]))
+            log.debug("recv: log: %s" % byte_to_hexstring(data[9:]))
             self.publish(event=self.LOG_EVENT, data=data[9:])
         elif cmd == WIFI_MSG:
-            log.debug("recv: wifi: %s" % byteToHexstring(data[9:]))
+            log.debug("recv: wifi: %s" % byte_to_hexstring(data[9:]))
             self.publish(event=self.WIFI_EVENT, data=data[9:])
         elif cmd == LIGHT_MSG:
-            log.debug("recv: light: %s" % byteToHexstring(data[9:]))
+            log.debug("recv: light: %s" % byte_to_hexstring(data[9:]))
             self.publish(event=self.LIGHT_EVENT, data=data[9:])
         elif cmd == FLIGHT_MSG:
             flight_data = FlightData(data[9:])
             log.debug("recv: flight data: %s" % str(flight_data))
             self.publish(event=self.FLIGHT_EVENT, data=flight_data)
         else:
-            log.info('unknown packet: %s' % byteToHexstring(data))
+            log.info('unknown packet: %s' % byte_to_hexstring(data))
             return False
 
         return True
@@ -293,8 +294,8 @@ class Drone:
 
         while True:
             if self.cmd:
-                cmd = self.cmd.getBuffer()
-                log.debug("dequeue: %s" % byteToHexstring(cmd))
+                cmd = self.cmd.get_buffer()
+                log.debug("dequeue: %s" % byte_to_hexstring(cmd))
             else:
                 cmd = None
 
@@ -304,31 +305,31 @@ class Drone:
                 try:
                     # Send data
                     sent = sock.sendto(cmd, self.tello_addr)
-                    log.debug("   send: %s" % byteToHexstring(cmd))
+                    log.debug("   send: %s" % byte_to_hexstring(cmd))
                     self.cmd = None
                     log.debug("self.cmd = None")
-                except KeyboardInterrupt, e:
-                    showException(e)
+                except KeyboardInterrupt, ex:
+                    show_exception(ex)
                     exit(1)
-                except Exception, e:
-                    log.error("   send: %s: " % byteToHexstring(cmd))
-                    showException(e)
+                except Exception, ex:
+                    log.error("   send: %s: " % byte_to_hexstring(cmd))
+                    show_exception(ex)
                     time.sleep(3.0)
                     continue
 
             try:
                 data, server = sock.recvfrom(1518)
-                log.debug("recv(1518): %s" % byteToHexstring(data))
-                self.processPacket(data)
+                log.debug("recv(1518): %s" % byte_to_hexstring(data))
+                self.process_packet(data)
                 data, server = sock.recvfrom(self.port)
-                log.debug("recv(%s): %s" % (self.port, byteToHexstring(data)))
-                self.processPacket(data)
-            except socket.timeout, e:
+                log.debug("recv(%s): %s" % (self.port, byte_to_hexstring(data)))
+                self.process_packet(data)
+            except socket.timeout, ex:
                 log.error('   recv: timeout')
                 data = None
-            except Exception, e:
+            except Exception, ex:
                 log.error('   recv: ')
-                showException(e)
+                show_exception(ex)
 
         log.info('exit from the thread.')
 
@@ -339,20 +340,20 @@ if __name__ == '__main__':
     d = Drone()
     try:
         # d.set_loglevel(d.LOG_ALL)
-        d.on(d.CONNECTED_EVENT, handler)
-        # d.on(d.WIFI_EVENT, handler)
-        # d.on(d.LIGHT_EVENT, handler)
-        d.on(d.FLIGHT_EVENT, handler)
-        # d.on(d.LOG_EVENT, handler)
+        d.subscribe(d.CONNECTED_EVENT, handler)
+        # d.subscribe(d.WIFI_EVENT, handler)
+        # d.subscribe(d.LIGHT_EVENT, handler)
+        d.subscribe(d.FLIGHT_EVENT, handler)
+        # d.subscribe(d.LOG_EVENT, handler)
 
         d.connect()
         time.sleep(2)
-        d.sendTime()
+        d.send_time()
         # d.takeoff()
         time.sleep(5)
         d.land()
         time.sleep(5)
-    except Exception, e:
-        showException(e)
+    except Exception, ex:
+        show_exception(ex)
     finally:
         d.quit()

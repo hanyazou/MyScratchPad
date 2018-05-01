@@ -17,7 +17,7 @@ class Logger:
         ts = ("%02d:%02d:%02d.%03d" % (now.hour, now.minute, now.second, now.microsecond/1000))
         return "%s: %s" % (self.header_string, ts)
 
-    def setLevel(self, level):
+    def set_level(self, level):
         self.log_level = level
 
     def error(self, str):
@@ -46,5 +46,5 @@ if __name__ == '__main__':
     log.warn('This is a warning message')
     log.info('This is an info message')
     log.debug('This should ** NOT **  be displayed')
-    log.setLevel(LOG_ALL)
+    log.set_level(LOG_ALL)
     log.debug('This is a debug message')
