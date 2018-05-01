@@ -1,9 +1,12 @@
 import threading 
 import socket
 import time
+import datetime
 import sys
+import traceback
 
 import crc
+import logger
 
 START_OF_PACKET = 0xcc
 WIFI_MSG = 0x1a
@@ -22,6 +25,9 @@ LAND_CMD = 0x0055
 FLIP_CMD = 0x005c
 QUIT_CMD = 0x00ff
 
+log = logger.Logger('Tello')
+#log.setLevel(logger.LOG_ALL)
+
 def little16(d):
     return (d&0xff), ((d >> 8)&0xff)
 
@@ -34,28 +40,45 @@ def byteToHexstring(s):
     else:
         return ''.join( [ "%02x " % ord(chr(x)) for x in s ] ).strip()
 
+def showException(e):
+    log.error(str(e))
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+
 class Packet:
     def __init__(self, cmd, type = 0x68):
-	self.buf = bytearray([
-            chr(START_OF_PACKET),
-            0, 0,
-            0,
-            chr(type),
-            chr(cmd & 0xff), chr((cmd >> 8)&0xff),
-            0, 0])
+        if isinstance(cmd, bytearray) or isinstance(cmd, str):
+            self.buf = bytearray()
+            self.buf[:] = cmd
+        else:
+            self.buf = bytearray([
+                chr(START_OF_PACKET),
+                0, 0,
+                0,
+                chr(type),
+                chr(cmd & 0xff), chr((cmd >> 8)&0xff),
+                0, 0])
 
     def getBuffer(self):
         return self.buf
 
     def getData(self):
-        return self.buf[9:len(buf)-2]
+        return self.buf[9:len(self.buf)-2]
 
     def addByte(self, d):
-        self.buf.append(d)
-
-    def addLittle16(self, d):
         self.buf.append(d&0xff)
-        self.buf.append((d>>8)&0xff)
+
+    def addInt16(self, d):
+        self.addByte(d)
+        self.addByte(d>>8)
+
+    def addTime(self, time = datetime.datetime.now()):
+        self.addByte(0)
+        self.addInt16(time.hour)
+        self.addInt16(time.minute)
+        self.addInt16(time.second)
+        self.addInt16((time.microsecond/1000)&0xff)
+        self.addInt16(((time.microsecond/1000)>>8)&0xff)
 
 class FlightData:
     def __init__(self, data):
@@ -141,9 +164,9 @@ class FlightData:
 
     def __str__(self):
         return (
-            ("height %04x\n" % self.height) +
-            ("batteryPercentage: %02x\n" % self.batteryPercentage) +
-            ("droneBatteryLeft: %04x\n" % self.droneBatteryLeft) +
+            ("height=%04x, " % self.height) +
+            ("batteryPercentage=%02x, " % self.batteryPercentage) +
+            ("droneBatteryLeft=%04x, " % self.droneBatteryLeft) +
             "")
 
 class Drone:
@@ -154,37 +177,80 @@ class Drone:
         self.pkt_seq_num = 0x01e4
         threading.Thread(target=self.thread).start()
 
+    def connect(self, port = 9617):
+        self.port = port
+        p0 = ((port/1000)%10)<<4|((port/ 100)%10)
+        p1 = ((port/  10)%10)<<4|((port/   1)%10)
+        buf = 'conn_req:%c%c' % (chr(p0), chr(p1))
+        print '#### ok %s' % byteToHexstring('conn_req:\x86\x17')
+        print '#### ng %s' % byteToHexstring(buf)
+        log.info('connect (cmd="%s")' % str(buf))
+        self.enqueuePacket(Packet(buf))
+
     def takeoff(self):
-        if self.debug:
-            print ('tello: takemoff (cmd=%02x)' % TAKEOFF_CMD)
+        log.info('takemoff (cmd=%02x)' % TAKEOFF_CMD)
         pkt = Packet(TAKEOFF_CMD)
         self.enqueuePacket(pkt)
 
     def land(self):
-        if self.debug:
-            print ('tello: land (cmd=%02x)' % LAND_CMD)
+        log.info('land (cmd=%02x)' % LAND_CMD)
         pkt = Packet(LAND_CMD)
         pkt.addByte(0x00)
         self.enqueuePacket(pkt)
 
     def quit(self):
-        if self.debug:
-            print ('tello: land (cmd=QUIT)')
+        log.info('land (cmd=QUIT)')
         pkt = Packet(QUIT_CMD)
+        self.enqueuePacket(pkt)
+
+    def sendTime(self):
+        log.info('sendTime (cmd=%02x)' % TIME_CMD)
+        pkt = Packet(TIME_CMD, 0x50)
+        pkt.addTime()
         self.enqueuePacket(pkt)
 
     def enqueuePacket(self, pkt):
         buf = pkt.getBuffer()
-        buf[1], buf[2] = little16(len(buf)+2)
-        buf[1] = (buf[1] << 3)
-        buf[3] = crc.crc8(buf[0:3])
-        buf[7], buf[8] = little16(self.pkt_seq_num)
-        self.pkt_seq_num = self.pkt_seq_num + 1
-        pkt.addLittle16(crc.crc16(buf))
-        if self.debug:
-            print "tello: enqueue: %s" % byteToHexstring(buf)
+        if buf[0] == START_OF_PACKET:
+            buf[1], buf[2] = little16(len(buf)+2)
+            buf[1] = (buf[1] << 3)
+            buf[3] = crc.crc8(buf[0:3])
+            buf[7], buf[8] = little16(self.pkt_seq_num)
+            self.pkt_seq_num = self.pkt_seq_num + 1
+            pkt.addInt16(crc.crc16(buf))
+        log.debug("tello: enqueue: %s" % byteToHexstring(buf))
         self.cmd = pkt
 
+    def processPacket(self, data):
+        if isinstance(data, str):
+            data = bytearray([x for x in data])
+        if str(data[0:9]) == 'conn_ack:':
+            log.info('connected. (port=%2x%2x)' % (data[9], data[10]))
+            log.debug('    %s' % byteToHexstring(data))
+            return
+        if data[0] != START_OF_PACKET:
+            log.info('start of packet != %02x (%02x) (ignored)' % (START_OF_PACKET, data[0]))
+            log.info('    %s' % byteToHexstring(data))
+            log.info('    %s' % str(map(chr, data))[1:-1])
+            return False
+
+        cmd = int16(data[5], data[6])
+        if cmd == LOG_MSG:
+            log.info("recv: log: ...")
+        elif cmd == WIFI_MSG:
+            log.info("recv: wifi: ...")
+        elif cmd == LIGHT_MSG:
+            log.info("recv: light: ...")
+        elif cmd == FLIGHT_MSG:
+            flight_data = FlightData(data[9:])
+            log.info("recv: flight data: %s" % str(flight_data))
+        else:
+            log.info('unknown packet: %s' % byteToHexstring(data))
+            return False
+
+        return True
+
+        
     def thread(self):
         # Create a UDP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -192,13 +258,10 @@ class Drone:
         sock.bind(local_ddr)
         sock.settimeout(3.0)
 
-        sock.sendto("conn_req:\x96\x17", self.tello_addr)
-
         while True:
             if self.cmd:
                 cmd = self.cmd.getBuffer()
-                if self.debug:
-                    print ("tello: dequeue: %s" % byteToHexstring(cmd))
+                log.debug("dequeue: %s" % byteToHexstring(cmd))
             else:
                 cmd = None
 
@@ -208,63 +271,45 @@ class Drone:
                 try:
                     # Send data
                     sent = sock.sendto(cmd, self.tello_addr)
-                    if self.debug:
-                        print ("tello:    send: %s" % byteToHexstring(cmd))
+                    log.debug("   send: %s" % byteToHexstring(cmd))
                     self.cmd = None
-                    if self.debug:
-                        print ("tello: self.cmd = None")
+                    log.debug("self.cmd = None")
                 except KeyboardInterrupt, e:
-                    print("tello:    send: %s: " % byteToHexstring(cmd))
-                    print(e)
+                    log.info(e)
                     exit(1)
                 except Exception, e:
-                    print("tello:    send: %s: " % byteToHexstring(cmd))
-                    print(e)
+                    log.error("   send: %s: " % byteToHexstring(cmd))
+                    log.error(str(e))
                     time.sleep(3.0)
                     continue
 
             try:
                 data, server = sock.recvfrom(1518)
-                if self.debug:
-                    print ("tello:recv1518: %s" % byteToHexstring(data))
-                data, server = sock.recvfrom(9617)
-                if self.debug:
-                    print ("tello:recv9617: %s" % byteToHexstring(data))
+                log.debug("recv(1518): %s" % byteToHexstring(data))
+                self.processPacket(data)
+                data, server = sock.recvfrom(self.port)
+                log.debug("recv(%s): %s" % (self.port, byteToHexstring(data)))
+                self.processPacket(data)
             except socket.timeout, e:
-                print ('tello:    recv: timeout')
+                log.error('   recv: timeout')
                 data = None
             except Exception, e:
-                print ('tello:    recv: ')
-                print(e)
-                data = None
-            if data != None:
-                data = bytearray([x for x in data])
-                if data[0] != START_OF_PACKET:
-                    print('start of packet != %02x (%02x) (ignored)' % (START_OF_PACKET, data[0]))
-                    continue
-                cmd = int16(data[5], data[6])
-                if cmd == LOG_MSG:
-                    print ("tello:    recv: LOG")
-                elif cmd == WIFI_MSG:
-                    print ("tello:    recv: WIFI")
-                elif cmd == LIGHT_MSG:
-                    print ("tello:    recv: LIGHT")
-                elif cmd == FLIGHT_MSG:
-                    print ("tello:    recv: FLIGHT")
-                    flight_data = FlightData(data[9:])
-                    print flight_data
-                else:
-                    print('unknown packet id = %04x (ignored)' % cmd)
+                log.error('   recv: ')
+                log.error(str(e))
 
         print ('tello: exit from the thread.')
 
 if __name__ == '__main__':
-    d = Drone()
-    d.land()
-    time.sleep(5)
-    d.takeoff()
-    time.sleep(10)
-    d.land()
-    time.sleep(5)
-    d.quit()
-
+    try:
+        d = Drone()
+        d.connect()
+        time.sleep(2)
+        d.sendTime()
+#        d.takeoff()
+        time.sleep(5)
+        d.land()
+        time.sleep(5)
+    except Exception, e:
+        showException(e)
+    finally:
+        d.quit()
