@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 #
-# RYZE Tello toy drone SDK and PS3 joystick
+# RYZE Tello toy drone SDK and PS4 joystick
 #
 
 import time
@@ -11,7 +11,7 @@ import pygame
 from pygame.locals import *
 
 
-class buttons:
+class ButtonsPS3:
     UP = 4
     RIGHT = 5
     DOWN = 6
@@ -26,6 +26,21 @@ class buttons:
     SQUARE = 15
 
 
+class ButtonsPS4:
+    UP = -1
+    RIGHT = -1
+    DOWN = -1
+    LEFT = -1
+    L2 = 6
+    R2 = 7
+    L1 = 4
+    R1 = 5
+    TRIANGLE = 3
+    CIRCLE = 2
+    CROSS = 1
+    SQUARE = 0
+
+
 def main():
     pygame.init()
     pygame.joystick.init()
@@ -33,11 +48,14 @@ def main():
         js = pygame.joystick.Joystick(0)
         js.init()
         print 'Joystick name: ' + js.get_name()
+
     except pygame.error:
         print 'no joystick found'
 
+    buttons = ButtonsPS4
     drone = tello.Drone()
     drone.connect()
+    speed = 30
 
     try:
         while 1:
@@ -46,25 +64,38 @@ def main():
                 if e.type == pygame.locals.JOYAXISMOTION:
                     x, y = js.get_axis(0), js.get_axis(1)
                     # print 'x and y : ' + str(x) +' , '+ str(y)
+                elif e.type == pygame.locals.JOYHATMOTION:
+                    if e.value[0] < 0:
+                        drone.counter_clockwise(speed)
+                    if e.value[0] == 0:
+                        drone.clockwise(0)
+                    if e.value[0] > 0:
+                        drone.clockwise(speed)
+                    if e.value[1] < 0:
+                        drone.down(speed)
+                    if e.value[1] == 0:
+                        drone.up(0)
+                    if e.value[1] > 0:
+                        drone.up(speed)
                 elif e.type == pygame.locals.JOYBUTTONDOWN:
                     if e.button == buttons.L1:
                         drone.land()
                     elif e.button == buttons.UP:
-                        drone.up(20)
+                        drone.up(speed)
                     elif e.button == buttons.DOWN:
-                        drone.down(20)
+                        drone.down(speed)
                     elif e.button == buttons.RIGHT:
-                        drone.cw(20)
+                        drone.clockwise(speed)
                     elif e.button == buttons.LEFT:
-                        drone.ccw(20)
+                        drone.counter_clockwise(speed)
                     elif e.button == buttons.TRIANGLE:
-                        drone.forward(20)
+                        drone.forward(speed)
                     elif e.button == buttons.CROSS:
-                        drone.backfard(20)
+                        drone.backward(speed)
                     elif e.button == buttons.CIRCLE:
-                        drone.right(20)
+                        drone.right(speed)
                     elif e.button == buttons.SQUARE:
-                        drone.left(20)
+                        drone.left(speed)
                 elif e.type == pygame.locals.JOYBUTTONUP:
                     if e.button == buttons.L2:
                         drone.takeoff()
@@ -73,13 +104,13 @@ def main():
                     elif e.button == buttons.DOWN:
                         drone.down(0)
                     elif e.button == buttons.RIGHT:
-                        drone.cw(0)
+                        drone.clockwise(0)
                     elif e.button == buttons.LEFT:
-                        drone.ccw(0)
+                        drone.counter_clockwise(0)
                     elif e.button == buttons.TRIANGLE:
                         drone.forward(0)
                     elif e.button == buttons.CROSS:
-                        drone.backfard(0)
+                        drone.backward(0)
                     elif e.button == buttons.CIRCLE:
                         drone.right(0)
                     elif e.button == buttons.SQUARE:

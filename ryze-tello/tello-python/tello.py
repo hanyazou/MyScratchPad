@@ -65,6 +65,15 @@ class Packet(object):
                 chr(cmd & 0xff), chr((cmd >> 8) & 0xff),
                 0, 0])
 
+    def fixup(self, seq_num=0):
+        buf = self.get_buffer()
+        if buf[0] == START_OF_PACKET:
+            buf[1], buf[2] = little16(len(buf)+2)
+            buf[1] = (buf[1] << 3)
+            buf[3] = crc.crc8(buf[0:3])
+            buf[7], buf[8] = little16(seq_num)
+            self.add_int16(crc.crc16(buf))
+
     def get_buffer(self):
         return self.buf
 
@@ -79,12 +88,21 @@ class Packet(object):
         self.add_byte(val >> 8)
 
     def add_time(self, time=datetime.datetime.now()):
-        self.add_byte(0)
         self.add_int16(time.hour)
         self.add_int16(time.minute)
         self.add_int16(time.second)
         self.add_int16((time.microsecond/1000) & 0xff)
         self.add_int16(((time.microsecond/1000) >> 8) & 0xff)
+
+    def get_time(self, buf=None):
+        if buf is None:
+            buf = self.get_data()[1:]
+        hour = int16(buf[0], buf[1])
+        min = int16(buf[2], buf[3])
+        sec = int16(buf[4], buf[5])
+        millisec = int16(buf[6], buf[8])
+        now = datetime.datetime.now()
+        return datetime.datetime(now.year, now.month, now.day, hour, min, sec, millisec)
 
 
 class FlightData(object):
@@ -171,9 +189,10 @@ class FlightData(object):
 
     def __str__(self):
         return (
-            ("height=%04x" % self.height) +
-            (", battery_percentage=%02x" % self.battery_percentage) +
-            (", drone_battery_left=%04x" % self.drone_battery_left) +
+            ("height=%2d" % self.height) +
+            (", fly_mode=0x%02x" % self.fly_mode) +
+            (", battery_percentage=%2d" % self.battery_percentage) +
+            (", drone_battery_left=0x%04x" % self.drone_battery_left) +
             "")
 
 
@@ -183,6 +202,7 @@ class Drone(object):
     LIGHT_EVENT = event.Event('light')
     FLIGHT_EVENT = event.Event('fligt')
     LOG_EVENT = event.Event('log')
+    TIME_EVENT = event.Event('time')
 
     LOG_ERROR = logger.LOG_ERROR
     LOG_WARN = logger.LOG_WARN
@@ -196,6 +216,11 @@ class Drone(object):
         self.cmd = None
         self.pkt_seq_num = 0x01e4
         self.port = port
+        self.left_x = 0.0
+        self.left_y = 0.0
+        self.right_x = 0.0
+        self.right_y = 0.0
+        self.sock = None
         threading.Thread(target=self.thread).start()
 
     def set_loglevel(self, level):
@@ -233,38 +258,143 @@ class Drone(object):
         pkt = Packet(QUIT_CMD)
         self.enqueue_packet(pkt)
 
-    def send_time(self):
+    def __prepare_time_command(self):
         log.info('send_time (cmd=0x%02x)' % TIME_CMD)
         pkt = Packet(TIME_CMD, 0x50)
+        pkt.add_byte(0)
         pkt.add_time()
-        self.enqueue_packet(pkt)
+        return pkt
+
+    def up(self, val):
+        """Up tells the drone to ascend. Pass in an int from 0-100."""
+        log.info('up(val=%d)' % val)
+        self.left_y = val / 100.0
+
+    def down(self, val):
+        """Down tells the drone to descend. Pass in an int from 0-100."""
+        log.info('down(val=%d)' % val)
+        self.left_y = val / 100.0 * -1
+
+    def forward(self, val):
+        """Forward tells the drone to go forward. Pass in an int from 0-100."""
+        log.info('forward(val=%d)' % val)
+        self.right_y = val / 100.0
+
+    def backward(self, val):
+        """Backward tells drone to go in reverse. Pass in an int from 0-100."""
+        log.info('backward(val=%d)' % val)
+        self.right_y = val / 100.0 * -1
+
+    def right(self, val):
+        """Right tells drone to go right. Pass in an int from 0-100."""
+        log.info('right(val=%d)' % val)
+        self.right_x = val / 100.0
+
+    def left(self, val):
+        """Left tells drone to go left. Pass in an int from 0-100."""
+        log.info('left(val=%d)' % val)
+        self.right_x = val / 100.0 * -1
+
+    def clockwise(self, val):
+        """Clockwise tells drone to rotate in a clockwise direction. Pass in an int from 0-100."""
+        log.info('clockwise(val=%d)' % val)
+        self.left_x = val / 100.0
+
+    def counter_clockwise(self, val):
+        """
+        CounterClockwise tells drone to rotate in a counter-clockwise direction.
+        Pass in an int from 0-100.
+        """
+        log.info('counter_clockwise(val=%d)' % val)
+        self.left_x = val / 100.0 * -1
+
+    def set_throttle(self, throttle):
+        log.info('set_throttle(val=%4.2f)' % throttle)
+        self.left_y = throttle
+
+    def set_yaw(self, yaw):
+        log.info('set_yaw(val=%4.2f)' % yaw)
+        self.left_x = yaw
+
+    def set_pitch(self, pitch):
+        log.info('set_pitch(val=%4.2f)' % pitch)
+        self.right_y = pitch
+
+    def set_roll(self, roll):
+        log.info('set_roll(val=%4.2f)' % roll)
+        self.right_x = roll
+
+    def __prepare_stick_command(self):
+        pkt = Packet(STICK_CMD, 0x60)
+
+        axis1 = int(1024 + 660.0 * self.right_x) & 0x7ff
+        axis2 = int(1024 + 660.0 * self.right_y) & 0x7ff
+        axis3 = int(1024 + 660.0 * self.left_y) & 0x7ff
+        axis4 = int(1024 + 660.0 * self.left_x) & 0x7ff
+        '''
+        11 bits (-1024 ~ +1023) x 4 axis = 44 bits
+        44 bits will be packed in to 6 bytes (48 bits)
+
+                    axis4      axis3      axis2      axis1
+             |          |          |          |          |
+                 4         3         2         1         0
+        98765432109876543210987654321098765432109876543210
+         |       |       |       |       |       |       |
+             byte5   byte4   byte3   byte2   byte1   byte0
+        '''
+        log.debug("stick command: yaw=%4d thr=%4d pit=%4d rol=%4d" % (axis4, axis3, axis2, axis1))
+        log.debug("stick command: yaw=%04x thr=%04x pit=%04x rol=%04x" % (axis4, axis3, axis2, axis1))
+        pkt.add_byte(((axis2 << 11 | axis1) >> 0) & 0xff)
+        pkt.add_byte(((axis2 << 11 | axis1) >> 8) & 0xff)
+        pkt.add_byte(((axis3 << 11 | axis2) >> 5) & 0xff)
+        pkt.add_byte(((axis4 << 11 | axis3) >> 2) & 0xff)
+        pkt.add_byte(((axis4 << 11 | axis3) >> 10) & 0xff)
+        pkt.add_byte(((axis4 << 11 | axis3) >> 18) & 0xff)
+        pkt.add_time()
+
+        return pkt
 
     def enqueue_packet(self, pkt):
-        buf = pkt.get_buffer()
-        if buf[0] == START_OF_PACKET:
-            buf[1], buf[2] = little16(len(buf)+2)
-            buf[1] = (buf[1] << 3)
-            buf[3] = crc.crc8(buf[0:3])
-            buf[7], buf[8] = little16(self.pkt_seq_num)
-            self.pkt_seq_num = self.pkt_seq_num + 1
-            pkt.add_int16(crc.crc16(buf))
-        log.debug("tello: enqueue: %s" % byte_to_hexstring(buf))
+        pkt.fixup(self.pkt_seq_num)
+        self.pkt_seq_num = self.pkt_seq_num + 1
+        log.debug("enqueue: %s" % byte_to_hexstring(pkt.get_buffer()))
         self.cmd = pkt
+
+    def send_packet(self, pkt):
+        try:
+            cmd = pkt.get_buffer()
+            self.sock.sendto(cmd, self.tello_addr)
+            log.debug("stick command: %s" % byte_to_hexstring(cmd))
+        except socket.error as err:
+            log.error("send_packet: %s" % str(err))
+            return False
+
+        return True
 
     def process_packet(self, data):
         if isinstance(data, str):
             data = bytearray([x for x in data])
+
         if str(data[0:9]) == 'conn_ack:':
             log.info('connected. (port=%2x%2x)' % (data[9], data[10]))
             log.debug('    %s' % byte_to_hexstring(data))
             self.publish(event=self.CONNECTED_EVENT, data=data)
+
+            # send time
+            pkt = self.__prepare_time_command()
+            pkt.fixup()
+            self.send_packet(pkt)  # ignore errors
+            log.debug("send time command: %s" % byte_to_hexstring(pkt.get_buffer()))
+
             return True
+
         if data[0] != START_OF_PACKET:
             log.info('start of packet != %02x (%02x) (ignored)' % (START_OF_PACKET, data[0]))
             log.info('    %s' % byte_to_hexstring(data))
             log.info('    %s' % str(map(chr, data))[1:-1])
             return False
 
+        pkt = Packet(data)
         cmd = int16(data[5], data[6])
         if cmd == LOG_MSG:
             log.debug("recv: log: %s" % byte_to_hexstring(data[9:]))
@@ -279,6 +409,9 @@ class Drone(object):
             flight_data = FlightData(data[9:])
             log.debug("recv: flight data: %s" % str(flight_data))
             self.publish(event=self.FLIGHT_EVENT, data=flight_data)
+        elif cmd == TIME_CMD:
+            log.debug("recv: time data: %s" % byte_to_hexstring(data))
+            self.publish(event=self.TIME_EVENT, data=data[7:9])
         else:
             log.info('unknown packet: %s' % byte_to_hexstring(data))
             return False
@@ -291,31 +424,25 @@ class Drone(object):
         local_ddr = ('', 9000)
         sock.bind(local_ddr)
         sock.settimeout(3.0)
+        self.sock = sock
 
         while True:
             if self.cmd:
                 cmd = self.cmd.get_buffer()
                 log.debug("dequeue: %s" % byte_to_hexstring(cmd))
-            else:
-                cmd = None
-
-            if cmd is not None:
                 if (cmd[5] | (cmd[6] << 8)) == QUIT_CMD:
                     break
-                try:
-                    # Send data
-                    sent = sock.sendto(cmd, self.tello_addr)
-                    log.debug("   send: %s" % byte_to_hexstring(cmd))
+                if self.send_packet(self.cmd):
                     self.cmd = None
                     log.debug("self.cmd = None")
-                except KeyboardInterrupt, ex:
-                    show_exception(ex)
-                    exit(1)
-                except Exception, ex:
-                    log.error("   send: %s: " % byte_to_hexstring(cmd))
-                    show_exception(ex)
+                else:
                     time.sleep(3.0)
                     continue
+
+            pkt = self.__prepare_stick_command()
+            pkt.fixup()
+            self.send_packet(pkt)  # ignore errors
+            log.debug("stick command: %s" % byte_to_hexstring(pkt.get_buffer()))
 
             try:
                 data, server = sock.recvfrom(1518)
@@ -325,17 +452,28 @@ class Drone(object):
                 log.debug("recv(%s): %s" % (self.port, byte_to_hexstring(data)))
                 self.process_packet(data)
             except socket.timeout, ex:
-                log.error('   recv: timeout')
+                log.error('recv: timeout')
                 data = None
             except Exception, ex:
-                log.error('   recv: ')
+                log.error('recv: ')
                 show_exception(ex)
 
         log.info('exit from the thread.')
 
+prev_flight_data = None
 if __name__ == '__main__':
     def handler(event, sender, data, **args):
-        print 'event="%s" data=%s' % (event.getname(), str(data))
+        global prev_flight_data
+        if event is Drone.CONNECTED_EVENT:
+            print 'connected'
+        elif event is Drone.FLIGHT_EVENT:
+            if prev_flight_data != str(data):
+                print data
+                prev_flight_data = str(data)
+        elif event is Drone.TIME_EVENT:
+            print 'event="%s" data=%d' % (event.getname(), data[0] + data[1] << 8)
+        else:
+            print 'event="%s" data=%s' % (event.getname(), str(data))
 
     d = Drone()
     try:
@@ -345,12 +483,18 @@ if __name__ == '__main__':
         # d.subscribe(d.LIGHT_EVENT, handler)
         d.subscribe(d.FLIGHT_EVENT, handler)
         # d.subscribe(d.LOG_EVENT, handler)
+        d.subscribe(d.TIME_EVENT, handler)
 
         d.connect()
         time.sleep(2)
-        d.send_time()
-        # d.takeoff()
+        d.takeoff()
         time.sleep(5)
+        d.down(50)
+        time.sleep(3)
+        d.up(50)
+        time.sleep(3)
+        d.down(0)
+        time.sleep(2)
         d.land()
         time.sleep(5)
     except Exception, ex:
