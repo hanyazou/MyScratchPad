@@ -224,6 +224,8 @@ class Drone(object):
         self.right_y = 0.0
         self.sock = None
         self.running = True
+        self.prev_video_data_time = None
+        self.video_data_size = 0
         threading.Thread(target=self.recv_thread).start()
         threading.Thread(target=self.video_thread).start()
 
@@ -510,8 +512,18 @@ class Drone(object):
         while self.running:
             try:
                 data, server = sock.recvfrom(self.udpsize)
+                now = datetime.datetime.now()
                 log.debug("video recv: %s %d bytes" % (byte_to_hexstring(data[0:2]), len(data)))
                 self.publish(event=self.VIDEO_FRAME_EVENT, data=data[2:])
+                if self.prev_video_data_time is None:
+                    self.prev_video_data_time = now
+                self.video_data_size += len(data)
+                dur = (now - self.prev_video_data_time).total_seconds()
+                if 2.0 < dur:
+                    log.info('video data %d bytes %5.1fKB/sec' %
+                             (self.video_data_size, self.video_data_size / dur / 1024))
+                    self.video_data_size = 0
+                    self.prev_video_data_time = now
             except socket.timeout, ex:
                 log.error('video recv: timeout')
                 data = None
@@ -522,13 +534,9 @@ class Drone(object):
         log.info('exit from the video thread.')
 
 prev_flight_data = None
-prev_video_data_time = None
-video_data_size = 0
 if __name__ == '__main__':
     def handler(event, sender, data, **args):
         global prev_flight_data
-        global prev_video_data_time
-        global video_data_size
         if event is Drone.CONNECTED_EVENT:
             print 'connected'
         elif event is Drone.FLIGHT_EVENT:
@@ -538,16 +546,7 @@ if __name__ == '__main__':
         elif event is Drone.TIME_EVENT:
             print 'event="%s" data=%d' % (event.getname(), data[0] + data[1] << 8)
         elif event is Drone.VIDEO_FRAME_EVENT:
-            now = datetime.datetime.now()
-            if prev_video_data_time is None:
-                prev_video_data_time = now
-            video_data_size += len(data)
-            dur = (now - prev_video_data_time).total_seconds()
-            if 2.0 < dur:
-                print ('event="%s" data %d bytes %5.1fKB/sec' %
-                       (event.getname(), video_data_size, video_data_size / dur / 1024))
-                video_data_size = 0
-                prev_video_data_time = now
+            pass
         else:
             print 'event="%s" data=%s' % (event.getname(), str(data))
 
