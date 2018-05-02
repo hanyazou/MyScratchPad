@@ -9,6 +9,7 @@ import louie.dispatcher as dispatcher
 import crc
 import logger
 import event
+import error
 
 log = logger.Logger('Tello')
 
@@ -19,7 +20,7 @@ LIGHT_MSG = 53
 FLIGHT_MSG = 0x56
 LOG_MSG = 0x1050
 
-VIDEO_ENCODE_RATE_CMD = 0x20
+VIDEO_ENCODER_RATE_CMD = 0x20
 VIDEO_START_CMD = 0x25
 EXPOSURE_CMD = 0x34
 TIME_CMD = 70
@@ -27,7 +28,6 @@ STICK_CMD = 80
 TAKEOFF_CMD = 0x0054
 LAND_CMD = 0x0055
 FLIP_CMD = 0x005c
-QUIT_CMD = 0x00ff
 
 
 def little16(val):
@@ -203,6 +203,7 @@ class Drone(object):
     FLIGHT_EVENT = event.Event('fligt')
     LOG_EVENT = event.Event('log')
     TIME_EVENT = event.Event('time')
+    VIDEO_FRAME_EVENT = event.Event('video frame')
 
     LOG_ERROR = logger.LOG_ERROR
     LOG_WARN = logger.LOG_WARN
@@ -216,12 +217,15 @@ class Drone(object):
         self.cmd = None
         self.pkt_seq_num = 0x01e4
         self.port = port
+        self.udpsize = 2000
         self.left_x = 0.0
         self.left_y = 0.0
         self.right_x = 0.0
         self.right_y = 0.0
         self.sock = None
-        threading.Thread(target=self.thread).start()
+        self.running = True
+        threading.Thread(target=self.recv_thread).start()
+        threading.Thread(target=self.video_thread).start()
 
     def set_loglevel(self, level):
         log.set_level(level)
@@ -243,27 +247,52 @@ class Drone(object):
         dispatcher.send(signal=event, sender=self, **args)
 
     def takeoff(self):
-        log.info('takemoff (cmd=0x%02x)' % TAKEOFF_CMD)
+        log.info('takemoff (cmd=0x%02x seq=0x%04x)' % (TAKEOFF_CMD, self.pkt_seq_num))
         pkt = Packet(TAKEOFF_CMD)
         self.enqueue_packet(pkt)
 
     def land(self):
-        log.info('land (cmd=0x%02x)' % LAND_CMD)
+        log.info('land (cmd=0x%02x seq=0x%04x)' % (LAND_CMD, self.pkt_seq_num))
         pkt = Packet(LAND_CMD)
         pkt.add_byte(0x00)
         self.enqueue_packet(pkt)
 
     def quit(self):
-        log.info('quit (cmd=QUIT)')
-        pkt = Packet(QUIT_CMD)
-        self.enqueue_packet(pkt)
+        log.info('quit')
+        self.running = False
 
     def __prepare_time_command(self):
-        log.info('send_time (cmd=0x%02x)' % TIME_CMD)
+        log.info('send_time (cmd=0x%02x seq=0x%04x)' % (TIME_CMD, self.pkt_seq_num))
         pkt = Packet(TIME_CMD, 0x50)
         pkt.add_byte(0)
         pkt.add_time()
         return pkt
+
+    def start_video(self):
+        """start_video tells Tello to send start info (SPS/PPS) for video stream."""
+        log.info('start video (cmd=0x%02x seq=0x%04x)' % (VIDEO_START_CMD, self.pkt_seq_num))
+        pkt = Packet(VIDEO_START_CMD, 0x60)
+        pkt.fixup()
+        return self.send_packet(pkt)
+
+    def set_exposure(self, level):
+        """set_exposure sets the drone camera exposure level. Valid levels are 0, 1, and 2."""
+        if level < 0 or 2 < level:
+            raise error.TelloError('Invalid exposure level')
+        log.info('set exposure (cmd=0x%02x seq=0x%04x)' % (EXPOSURE_CMD, self.pkt_seq_num))
+        pkt = Packet(EXPOSURE_CMD, 0x48)
+        pkt.add_byte(level)
+        pkt.fixup()
+        return self.send_packet(pkt)
+
+    def set_video_encoder_rate(self, rate):
+        """set_video_encoder_rate sets the drone video encoder rate."""
+        log.info('set video encoder rate (cmd=0x%02x seq=%04x)' %
+                 (VIDEO_ENCODER_RATE_CMD, self.pkt_seq_num))
+        pkt = Packet(VIDEO_ENCODER_RATE_CMD, 0x68)
+        pkt.add_byte(rate)
+        pkt.fixup()
+        return self.send_packet(pkt)
 
     def up(self, val):
         """Up tells the drone to ascend. Pass in an int from 0-100."""
@@ -353,8 +382,10 @@ class Drone(object):
          |       |       |       |       |       |       |
              byte5   byte4   byte3   byte2   byte1   byte0
         '''
-        log.debug("stick command: yaw=%4d thr=%4d pit=%4d rol=%4d" % (axis4, axis3, axis2, axis1))
-        log.debug("stick command: yaw=%04x thr=%04x pit=%04x rol=%04x" % (axis4, axis3, axis2, axis1))
+        log.debug("stick command: yaw=%4d thr=%4d pit=%4d rol=%4d" %
+                  (axis4, axis3, axis2, axis1))
+        log.debug("stick command: yaw=%04x thr=%04x pit=%04x rol=%04x" %
+                  (axis4, axis3, axis2, axis1))
         pkt.add_byte(((axis2 << 11 | axis1) >> 0) & 0xff)
         pkt.add_byte(((axis2 << 11 | axis1) >> 8) & 0xff)
         pkt.add_byte(((axis3 << 11 | axis2) >> 5) & 0xff)
@@ -423,26 +454,26 @@ class Drone(object):
         elif cmd == TIME_CMD:
             log.debug("recv: time data: %s" % byte_to_hexstring(data))
             self.publish(event=self.TIME_EVENT, data=data[7:9])
+        elif (TAKEOFF_CMD, LAND_CMD, VIDEO_START_CMD, VIDEO_ENCODER_RATE_CMD):
+            log.info("recv: ack: cmd=0x%02x seq=0x%04x %s" %
+                     (int16(data[5], data[6]), int16(data[7], data[8]), byte_to_hexstring(data)))
         else:
             log.info('unknown packet: %s' % byte_to_hexstring(data))
             return False
 
         return True
 
-    def thread(self):
+    def recv_thread(self):
         # Create a UDP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        local_ddr = ('', 9000)
-        sock.bind(local_ddr)
-        sock.settimeout(3.0)
+        sock.bind(('', 9000))
+        sock.settimeout(1.0)
         self.sock = sock
 
-        while True:
+        while self.running:
             if self.cmd:
                 cmd = self.cmd.get_buffer()
                 log.debug("dequeue: %s" % byte_to_hexstring(cmd))
-                if (cmd[5] | (cmd[6] << 8)) == QUIT_CMD:
-                    break
                 if self.send_packet(self.cmd):
                     self.cmd = None
                     log.debug("self.cmd = None")
@@ -456,11 +487,8 @@ class Drone(object):
             log.debug("stick command: %s" % byte_to_hexstring(pkt.get_buffer()))
 
             try:
-                data, server = sock.recvfrom(1518)
-                log.debug("recv(1518): %s" % byte_to_hexstring(data))
-                self.process_packet(data)
-                data, server = sock.recvfrom(self.port)
-                log.debug("recv(%s): %s" % (self.port, byte_to_hexstring(data)))
+                data, server = sock.recvfrom(self.udpsize)
+                log.debug("recv: %s" % byte_to_hexstring(data))
                 self.process_packet(data)
             except socket.timeout, ex:
                 log.error('recv: timeout')
@@ -469,12 +497,38 @@ class Drone(object):
                 log.error('recv: ')
                 show_exception(ex)
 
-        log.info('exit from the thread.')
+        log.info('exit from the recv thread.')
+
+    def video_thread(self):
+        log.info('start video thread')
+        # Create a UDP socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        port = 6038
+        sock.bind(('', port))
+        sock.settimeout(1.0)
+
+        while self.running:
+            try:
+                data, server = sock.recvfrom(self.udpsize)
+                log.debug("video recv: %s %d bytes" % (byte_to_hexstring(data[0:2]), len(data)))
+                self.publish(event=self.VIDEO_FRAME_EVENT, data=data[2:])
+            except socket.timeout, ex:
+                log.error('video recv: timeout')
+                data = None
+            except Exception, ex:
+                log.error('video recv: ')
+                show_exception(ex)
+
+        log.info('exit from the video thread.')
 
 prev_flight_data = None
+prev_video_data_time = None
+video_data_size = 0
 if __name__ == '__main__':
     def handler(event, sender, data, **args):
         global prev_flight_data
+        global prev_video_data_time
+        global video_data_size
         if event is Drone.CONNECTED_EVENT:
             print 'connected'
         elif event is Drone.FLIGHT_EVENT:
@@ -483,6 +537,17 @@ if __name__ == '__main__':
                 prev_flight_data = str(data)
         elif event is Drone.TIME_EVENT:
             print 'event="%s" data=%d' % (event.getname(), data[0] + data[1] << 8)
+        elif event is Drone.VIDEO_FRAME_EVENT:
+            now = datetime.datetime.now()
+            if prev_video_data_time is None:
+                prev_video_data_time = now
+            video_data_size += len(data)
+            dur = (now - prev_video_data_time).total_seconds()
+            if 2.0 < dur:
+                print ('event="%s" data %d bytes %5.1fKB/sec' %
+                       (event.getname(), video_data_size, video_data_size / dur / 1024))
+                video_data_size = 0
+                prev_video_data_time = now
         else:
             print 'event="%s" data=%s' % (event.getname(), str(data))
 
@@ -495,9 +560,13 @@ if __name__ == '__main__':
         d.subscribe(d.FLIGHT_EVENT, handler)
         # d.subscribe(d.LOG_EVENT, handler)
         d.subscribe(d.TIME_EVENT, handler)
+        d.subscribe(d.VIDEO_FRAME_EVENT, handler)
 
         d.connect()
         time.sleep(2)
+        d.start_video()
+        d.set_exposure(0)
+        d.set_video_encoder_rate(4)
         d.takeoff()
         time.sleep(5)
         d.down(50)
@@ -512,3 +581,4 @@ if __name__ == '__main__':
         show_exception(ex)
     finally:
         d.quit()
+    print 'end.'
