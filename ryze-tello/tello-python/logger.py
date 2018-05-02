@@ -1,4 +1,5 @@
 import datetime
+import threading
 
 LOG_ERROR = 0
 LOG_WARN = 1
@@ -11,6 +12,7 @@ class Logger:
     def __init__(self, header=''):
         self.log_level = LOG_INFO
         self.header_string = header
+        self.lock = threading.Lock()
 
     def header(self):
         now = datetime.datetime.now()
@@ -20,25 +22,30 @@ class Logger:
     def set_level(self, level):
         self.log_level = level
 
+    def output(self, msg):
+        self.lock.acquire()
+        print msg
+        self.lock.release()
+
     def error(self, str):
         if self.log_level < LOG_ERROR:
             return
-        print "%s: Error: %s" % (self.header(), str)
+        self.output("%s: Error: %s" % (self.header(), str))
 
     def warn(self, str):
         if self.log_level < LOG_WARN:
             return
-        print "%s:  Warn: %s" % (self.header(), str)
+        self.output("%s:  Warn: %s" % (self.header(), str))
 
     def info(self, str):
         if self.log_level < LOG_INFO:
             return
-        print "%s:  Info: %s" % (self.header(), str)
+        self.output("%s:  Info: %s" % (self.header(), str))
 
     def debug(self, str):
         if self.log_level < LOG_DEBUG:
             return
-        print "%s: Debug: %s" % (self.header(), str)
+        self.output("%s: Debug: %s" % (self.header(), str))
 
 if __name__ == '__main__':
     log = Logger('test')
