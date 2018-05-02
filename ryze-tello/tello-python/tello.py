@@ -308,21 +308,32 @@ class Drone(object):
         log.info('counter_clockwise(val=%d)' % val)
         self.left_x = val / 100.0 * -1
 
+    def __fix_range(self, val, min=-1.0, max=1.0):
+        if val < min:
+            val = min
+        elif val > max:
+            val = max
+        return val
+
     def set_throttle(self, throttle):
-        log.info('set_throttle(val=%4.2f)' % throttle)
-        self.left_y = throttle
+        if self.left_y != self.__fix_range(throttle):
+            log.info('set_throttle(val=%4.2f)' % throttle)
+        self.left_y = self.__fix_range(throttle)
 
     def set_yaw(self, yaw):
-        log.info('set_yaw(val=%4.2f)' % yaw)
-        self.left_x = yaw
+        if self.left_x != self.__fix_range(yaw):
+            log.info('set_yaw(val=%4.2f)' % yaw)
+        self.left_x = self.__fix_range(yaw)
 
     def set_pitch(self, pitch):
-        log.info('set_pitch(val=%4.2f)' % pitch)
-        self.right_y = pitch
+        if self.right_y != self.__fix_range(pitch):
+            log.info('set_pitch(val=%4.2f)' % pitch)
+        self.right_y = self.__fix_range(pitch)
 
     def set_roll(self, roll):
-        log.info('set_roll(val=%4.2f)' % roll)
-        self.right_x = roll
+        if self.right_x != self.__fix_range(roll):
+            log.info('set_roll(val=%4.2f)' % roll)
+        self.right_x = self.__fix_range(roll)
 
     def __prepare_stick_command(self):
         pkt = Packet(STICK_CMD, 0x60)

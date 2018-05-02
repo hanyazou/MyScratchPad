@@ -1,8 +1,10 @@
 #!/usr/bin/python
 
-#
-# RYZE Tello toy drone SDK and PS4 joystick
-#
+"""
+tellopy sample
+
+you can use PS3/PS4 joystick to controll DJI Tello with tellopy module
+"""
 
 import time
 import sys
@@ -11,7 +13,8 @@ import pygame
 from pygame.locals import *
 
 
-class ButtonsPS3:
+class JoystickPS3:
+    # buttons
     UP = 4
     RIGHT = 5
     DOWN = 6
@@ -24,9 +27,20 @@ class ButtonsPS3:
     CIRCLE = 13
     CROSS = 14
     SQUARE = 15
+    # axis
+    LEFT_X = 0
+    LEFT_Y = 1
+    RIGHT_X = 2
+    RIGHT_Y = 3
+    LEFT_X_REVERSE = 1.0
+    LEFT_Y_REVERSE = -1.0
+    RIGHT_X_REVERSE = 1.0
+    RIGHT_Y_REVERSE = -1.0
+    BACKSLASH = 0.1
 
 
-class ButtonsPS4:
+class JoystickPS4:
+    # buttons
     UP = -1
     RIGHT = -1
     DOWN = -1
@@ -39,20 +53,38 @@ class ButtonsPS4:
     CIRCLE = 2
     CROSS = 1
     SQUARE = 0
+    # axis
+    LEFT_X = 0
+    LEFT_Y = 1
+    RIGHT_X = 2
+    RIGHT_Y = 3
+    LEFT_X_REVERSE = 1.0
+    LEFT_Y_REVERSE = -1.0
+    RIGHT_X_REVERSE = 1.0
+    RIGHT_Y_REVERSE = -1.0
+    BACKSLASH = 0.08
 
 
 def main():
     pygame.init()
     pygame.joystick.init()
+    buttons = None
     try:
         js = pygame.joystick.Joystick(0)
         js.init()
-        print 'Joystick name: ' + js.get_name()
-
+        js_name = js.get_name()
+        print 'Joystick name: ' + js_name
+        if js_name == "Wireless Controller":
+            buttons = JoystickPS4
+        elif js_name == "PLAYSTATION(R)3 Controller":
+            buttons = JoystickPS3
     except pygame.error:
-        print 'no joystick found'
+        pass
 
-    buttons = ButtonsPS4
+    if buttons is None:
+        print 'no supported joystick found'
+        return
+
     drone = tello.Drone()
     drone.connect()
     speed = 30
@@ -62,8 +94,18 @@ def main():
             time.sleep(0.01)  # loop with pygame.event.get() is too mush tight w/o some sleep
             for e in pygame.event.get():
                 if e.type == pygame.locals.JOYAXISMOTION:
-                    x, y = js.get_axis(0), js.get_axis(1)
-                    # print 'x and y : ' + str(x) +' , '+ str(y)
+                    # ignore small backslash
+                    if -buttons.BACKSLASH <= e.value and e.value <= buttons.BACKSLASH:
+                        e.value = 0.0
+                    if e.axis == buttons.LEFT_Y:
+                        drone.set_throttle(e.value * buttons.LEFT_Y_REVERSE)
+                    if e.axis == buttons.LEFT_X:
+                        drone.set_yaw(e.value * buttons.LEFT_X_REVERSE)
+                    if e.axis == buttons.RIGHT_Y:
+                        drone.set_pitch(e.value * buttons.RIGHT_Y_REVERSE)
+                    if e.axis == buttons.RIGHT_X:
+                        drone.set_roll(e.value * buttons.RIGHT_X_REVERSE)
+
                 elif e.type == pygame.locals.JOYHATMOTION:
                     if e.value[0] < 0:
                         drone.counter_clockwise(speed)
