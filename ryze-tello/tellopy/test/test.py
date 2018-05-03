@@ -1,6 +1,6 @@
 from time import sleep
 import tellopy
-from tellopy.utils import *
+from tellopy._internal.utils import *
 
 prev_flight_data = None
 drone = tellopy.Tello()
