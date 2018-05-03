@@ -190,7 +190,7 @@ class Tello(object):
     LOG_DEBUG = logger.LOG_DEBUG
     LOG_ALL = logger.LOG_ALL
 
-    def __init__(self, port=9617):
+    def __init__(self, port=9000):
         self.tello_addr = ('192.168.10.1', 8889)
         self.debug = False
         self.cmd = None
@@ -216,7 +216,7 @@ class Tello(object):
 
     def connect(self):
         """Connect is used to send the initial connection request to the drone."""
-        port = self.port
+        port = 9617
         port0 = ((port/1000) % 10) << 4 | ((port/100) % 10)
         port1 = ((port/10) % 10) << 4 | ((port/1) % 10)
         buf = 'conn_req:%c%c' % (chr(port0), chr(port1))
@@ -228,7 +228,7 @@ class Tello(object):
         dispatcher.connect(handler, signal, sender=self)
 
     def __publish(self, event, **args):
-        args.update({'event': event, 'port': self.port})
+        args.update({'event': event})
         log.debug('publish signal=%s, args=%s' % (event, args))
         dispatcher.send(signal=event, sender=self, **args)
 
@@ -479,7 +479,7 @@ class Tello(object):
     def __recv_thread(self):
         # Create a UDP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(('', 9000))
+        sock.bind(('', self.port))
         sock.settimeout(1.0)
         self.sock = sock
 
