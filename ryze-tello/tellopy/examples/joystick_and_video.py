@@ -1,16 +1,15 @@
-#!/usr/bin/python
-
 """
-tellopy sample
+tellopy sample using joystick and video palyer
 
-you can use PS3/PS4 joystick to controll DJI Tello with tellopy module
+ - you can use PS3/PS4 joystick to controll DJI Tello with tellopy module
+ - you must install mplayer to replay the video
 """
 
 import time
 import sys
-from tello import Drone
+import tellopy
 import pygame
-from pygame.locals import *
+import pygame.locals
 from subprocess import Popen, PIPE
 
 
@@ -74,16 +73,16 @@ def handler(event, sender, data, **args):
     global prev_flight_data
     global video_player
     global drone
-    if event is Drone.CONNECTED_EVENT:
+    if event is drone.CONNECTED_EVENT:
         print 'connected'
         drone.start_video()
         drone.set_exposure(0)
         drone.set_video_encoder_rate(4)
-    elif event is Drone.FLIGHT_EVENT:
+    elif event is drone.FLIGHT_EVENT:
         if prev_flight_data != str(data):
             print data
             prev_flight_data = str(data)
-    elif event is Drone.VIDEO_FRAME_EVENT:
+    elif event is drone.VIDEO_FRAME_EVENT:
         if video_player is None:
             video_player = Popen(['mplayer', '-fps', '35', '-'], stdin=PIPE)
         try:
@@ -116,7 +115,7 @@ def main():
         print 'no supported joystick found'
         return
 
-    drone = Drone()
+    drone = tellopy.Tello()
     drone.connect()
     drone.subscribe(drone.CONNECTED_EVENT, handler)
     drone.subscribe(drone.FLIGHT_EVENT, handler)

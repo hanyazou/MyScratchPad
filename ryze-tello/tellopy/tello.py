@@ -3,13 +3,13 @@ import socket
 import time
 import datetime
 import sys
-import traceback
-import louie.dispatcher as dispatcher
+from louie import dispatcher
 
 import crc
 import logger
 import event
 import error
+from utils import *
 
 log = logger.Logger('Tello')
 
@@ -30,27 +30,6 @@ LAND_CMD = 0x0055
 FLIP_CMD = 0x005c
 
 
-def little16(val):
-    return (val & 0xff), ((val >> 8) & 0xff)
-
-
-def int16(val0, val1):
-    return (val0 & 0xff) | ((val1 & 0xff) << 8)
-
-
-def byte_to_hexstring(buf):
-    if isinstance(buf, str):
-        return ''.join(["%02x " % ord(x) for x in buf]).strip()
-
-    return ''.join(["%02x " % ord(chr(x)) for x in buf]).strip()
-
-
-def show_exception(ex):
-    log.error(str(ex))
-    exc_type, exc_value, exc_traceback = sys.exc_info()
-    traceback.print_exception(exc_type, exc_value, exc_traceback)
-
-
 class Packet(object):
     def __init__(self, cmd, pkt_type=0x68):
         if isinstance(cmd, (bytearray, str)):
@@ -68,10 +47,10 @@ class Packet(object):
     def fixup(self, seq_num=0):
         buf = self.get_buffer()
         if buf[0] == START_OF_PACKET:
-            buf[1], buf[2] = little16(len(buf)+2)
+            buf[1], buf[2] = le16(len(buf)+2)
             buf[1] = (buf[1] << 3)
             buf[3] = crc.crc8(buf[0:3])
-            buf[7], buf[8] = little16(seq_num)
+            buf[7], buf[8] = le16(seq_num)
             self.add_int16(crc.crc16(buf))
 
     def get_buffer(self):
@@ -196,7 +175,7 @@ class FlightData(object):
             "")
 
 
-class Drone(object):
+class Tello(object):
     CONNECTED_EVENT = event.Event('connected')
     WIFI_EVENT = event.Event('wifi')
     LIGHT_EVENT = event.Event('light')
@@ -499,7 +478,7 @@ class Drone(object):
                 log.error('recv: timeout')
                 data = None
             except Exception, ex:
-                log.error('recv: ')
+                log.error('recv: %s' % str(ex))
                 show_exception(ex)
 
         log.info('exit from the recv thread.')
@@ -535,56 +514,10 @@ class Drone(object):
                 log.error('video recv: timeout')
                 data = None
             except Exception, ex:
-                log.error('video recv: ')
+                log.error('video recv: %s' % str(ex))
                 show_exception(ex)
 
         log.info('exit from the video thread.')
 
-prev_flight_data = None
 if __name__ == '__main__':
-    def handler(event, sender, data, **args):
-        global prev_flight_data
-        if event is Drone.CONNECTED_EVENT:
-            print 'connected'
-        elif event is Drone.FLIGHT_EVENT:
-            if prev_flight_data != str(data):
-                print data
-                prev_flight_data = str(data)
-        elif event is Drone.TIME_EVENT:
-            print 'event="%s" data=%d' % (event.getname(), data[0] + data[1] << 8)
-        elif event is Drone.VIDEO_FRAME_EVENT:
-            pass
-        else:
-            print 'event="%s" data=%s' % (event.getname(), str(data))
-
-    d = Drone()
-    try:
-        # d.set_loglevel(d.LOG_ALL)
-        d.subscribe(d.CONNECTED_EVENT, handler)
-        # d.subscribe(d.WIFI_EVENT, handler)
-        # d.subscribe(d.LIGHT_EVENT, handler)
-        d.subscribe(d.FLIGHT_EVENT, handler)
-        # d.subscribe(d.LOG_EVENT, handler)
-        d.subscribe(d.TIME_EVENT, handler)
-        d.subscribe(d.VIDEO_FRAME_EVENT, handler)
-
-        d.connect()
-        time.sleep(2)
-        d.start_video()
-        d.set_exposure(0)
-        d.set_video_encoder_rate(4)
-        d.takeoff()
-        time.sleep(5)
-        d.down(50)
-        time.sleep(3)
-        d.up(50)
-        time.sleep(3)
-        d.down(0)
-        time.sleep(2)
-        d.land()
-        time.sleep(5)
-    except Exception, ex:
-        show_exception(ex)
-    finally:
-        d.quit()
-    print 'end.'
+    print 'You can use test.py for testing.'
