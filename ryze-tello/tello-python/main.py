@@ -8,9 +8,10 @@ you can use PS3/PS4 joystick to controll DJI Tello with tellopy module
 
 import time
 import sys
-import tello
+from tello import Drone
 import pygame
 from pygame.locals import *
+from subprocess import Popen, PIPE
 
 
 class JoystickPS3:
@@ -64,8 +65,38 @@ class JoystickPS4:
     RIGHT_Y_REVERSE = -1.0
     BACKSLASH = 0.08
 
+prev_flight_data = None
+video_player = None
+drone = None
+
+
+def handler(event, sender, data, **args):
+    global prev_flight_data
+    global video_player
+    global drone
+    if event is Drone.CONNECTED_EVENT:
+        print 'connected'
+        drone.start_video()
+        drone.set_exposure(0)
+        drone.set_video_encoder_rate(4)
+    elif event is Drone.FLIGHT_EVENT:
+        if prev_flight_data != str(data):
+            print data
+            prev_flight_data = str(data)
+    elif event is Drone.VIDEO_FRAME_EVENT:
+        if video_player is None:
+            video_player = Popen(['mplayer', '-fps', '35', '-'], stdin=PIPE)
+        try:
+            video_player.stdin.write(data)
+        except IOError, err:
+            print err
+            video_player = None
+    else:
+        print 'event="%s" data=%s' % (event.getname(), str(data))
+
 
 def main():
+    global drone
     pygame.init()
     pygame.joystick.init()
     buttons = None
@@ -85,8 +116,11 @@ def main():
         print 'no supported joystick found'
         return
 
-    drone = tello.Drone()
+    drone = Drone()
     drone.connect()
+    drone.subscribe(drone.CONNECTED_EVENT, handler)
+    drone.subscribe(drone.FLIGHT_EVENT, handler)
+    drone.subscribe(drone.VIDEO_FRAME_EVENT, handler)
     speed = 30
 
     try:

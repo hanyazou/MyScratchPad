@@ -227,7 +227,6 @@ class Drone(object):
         self.prev_video_data_time = None
         self.video_data_size = 0
         threading.Thread(target=self.recv_thread).start()
-        threading.Thread(target=self.video_thread).start()
 
     def set_loglevel(self, level):
         log.set_level(level)
@@ -270,12 +269,16 @@ class Drone(object):
         pkt.add_time()
         return pkt
 
-    def start_video(self):
-        """start_video tells Tello to send start info (SPS/PPS) for video stream."""
-        log.info('start video (cmd=0x%02x seq=0x%04x)' % (VIDEO_START_CMD, self.pkt_seq_num))
+    def __start_video(self):
         pkt = Packet(VIDEO_START_CMD, 0x60)
         pkt.fixup()
         return self.send_packet(pkt)
+
+    def start_video(self):
+        """start_video tells Tello to send start info (SPS/PPS) for video stream."""
+        log.info('start video (cmd=0x%02x seq=0x%04x)' % (VIDEO_START_CMD, self.pkt_seq_num))
+        threading.Thread(target=self.video_thread).start()
+        return self.__start_video()
 
     def set_exposure(self, level):
         """set_exposure sets the drone camera exposure level. Valid levels are 0, 1, and 2."""
@@ -524,6 +527,10 @@ class Drone(object):
                              (self.video_data_size, self.video_data_size / dur / 1024))
                     self.video_data_size = 0
                     self.prev_video_data_time = now
+
+                    # keep sending start video command
+                    self.__start_video()
+
             except socket.timeout, ex:
                 log.error('video recv: timeout')
                 data = None
