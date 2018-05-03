@@ -3,12 +3,11 @@ import tellopy
 from tellopy._internal.utils import *
 
 prev_flight_data = None
-drone = tellopy.Tello()
 
 
 def handler(event, sender, data, **args):
     global prev_flight_data
-    global drone
+    drone = sender
     if event is drone.CONNECTED_EVENT:
         print 'connected'
         drone.start_video()
@@ -27,7 +26,7 @@ def handler(event, sender, data, **args):
 
 
 def test():
-    global drone
+    drone = tellopy.Tello()
     try:
         # drone.set_loglevel(d.LOG_ALL)
         drone.subscribe(drone.CONNECTED_EVENT, handler)

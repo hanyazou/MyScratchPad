@@ -66,13 +66,12 @@ class JoystickPS4:
 
 prev_flight_data = None
 video_player = None
-drone = None
 
 
 def handler(event, sender, data, **args):
     global prev_flight_data
     global video_player
-    global drone
+    drone = sender
     if event is drone.CONNECTED_EVENT:
         print 'connected'
         drone.start_video()
@@ -95,7 +94,6 @@ def handler(event, sender, data, **args):
 
 
 def main():
-    global drone
     pygame.init()
     pygame.joystick.init()
     buttons = None
