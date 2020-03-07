@@ -2,102 +2,121 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <time.h>
-
-static inline
-uint64_t get_cntfrq(void)
-{
-    uint64_t cv;
-    asm("isb");
-    asm volatile("mrs %0, cntfrq_el0" : "=r" (cv));
-    return cv;
- }
-
-static inline
-uint64_t get_cntvct(void)
-{
-    uint64_t cv;
-    asm("isb");
-    asm volatile("mrs %0, cntvct_el0" : "=r" (cv));
-    return cv;
-}
+#include "counter.h"
 
 #define billion (1000000000LL)  /* < 1^32 = 4,294,967,296 */
 
 int
 main(int ac, char *av[])
 {
-    uint32_t sdiv, smul;
-    uint32_t nsdiv, nsmul;
-    uint64_t mask = ((1LL << 32) - 1);
-    uint32_t freq;
-    struct timespec ts;
+    uint64_t vct;
+    struct timespec sys_time;
+    struct timespec c;
+    struct timespec c2;
+    time_t tmp;
+
+    counter_init();
+    counter_show_params();
+
+    vct = get_cntvct();
+    counter_to_timespec(vct, &c);
+    tmp = c.tv_sec;
+    while (tmp == c.tv_sec) {
+        vct = get_cntvct();
+        counter_to_timespec(vct, &c);
+    }
+
+    {
+        int i, test_case;
+        int iteration = 100000000;  // 100,000,000
+        volatile uint64_t vct;
+        struct timespec st, et;
+        char *test_desc;
+        uint32_t duration;
+            
+        for (test_case = 0; test_case <= 7; test_case++) {
+            clock_gettime(CLOCK_REALTIME, &st);
+            switch (test_case) {
+            case 0:
+                test_desc = "  call counter_to_timespec1() w/o div";
+                for (i = 0; i < iteration; i++) {
+                    vct = get_cntvct();
+                    counter_to_timespec1(vct, &c);
+                }
+                break;
+            case 1:
+                test_desc = "  call counter_to_timespec2() with div";
+                for (i = 0; i < iteration; i++) {
+                    vct = get_cntvct();
+                    counter_to_timespec2(vct, &c);
+                }
+                break;
+            case 2:
+                test_desc = "  call counter_to_timespec2() with div w/o struct";
+                for (i = 0; i < iteration; i++) {
+                    vct = get_cntvct();
+                    counter_to_timespec3(vct, &c);
+                }
+                break;
+            case 3:
+                test_desc = "inline counter_to_timespec4() w/o initialization";
+                for (i = 0; i < iteration; i++) {
+                    vct = get_cntvct();
+                    counter_to_timespec4(vct, &c);
+                }
+                break;
+            case 4:
+                test_desc = "inline counter_to_timespec() with div";
+                for (i = 0; i < iteration; i++) {
+                    vct = get_cntvct();
+                    counter_to_timespec(vct, &c);
+                }
+                break;
+            case 5:
+                test_desc = "inline counter_gettime() w/o initialization";
+                for (i = 0; i < iteration; i++) {
+                    counter_gettime(&c);
+                }
+                break;
+            case 6:
+                test_desc = "  call counter_gettime1() w/o div";
+                for (i = 0; i < iteration; i++) {
+                    counter_gettime1(&c);
+                }
+                break;
+            case 7:
+                test_desc = "  call counter_gettime1() with div";
+                for (i = 0; i < iteration; i++) {
+                    counter_gettime2(&c);
+                }
+                break;
+            }
+            clock_gettime(CLOCK_REALTIME, &et);
+            duration = ((et.tv_sec * 1000000 + et.tv_nsec / 1000) -
+                        (st.tv_sec * 1000000 + st.tv_nsec / 1000));
+            printf("%d: %8.3f sec (%3d nsec) %s\n", test_case, (double)duration / 1000000,
+                   duration / (iteration / 1000), test_desc);
+        }
+    }
+
     int64_t nsdiff;
-
-    /*
-     *
-     */
-    printf ("sizeof timespec.tv_sec is: %ld\n", sizeof(ts.tv_sec));
-    printf ("sizeof timespec.tv_nsec is: %ld\n", sizeof(ts.tv_nsec));
-    printf ("sizeof time_t is: %ld\n", sizeof(time_t));
-
-    /* get clock frequency */
-    freq= get_cntfrq();
-    printf("freq=%d\n", freq);
-
-    /*
-     *
-     */
-    for (sdiv = 0; sdiv < 56; sdiv++) {
-        uint64_t tmp;
-        tmp = (1LL << sdiv)/freq;
-        if ((1LL << 32) <= tmp)
-            break;
-    }
-    sdiv -= 1;
-    smul = (uint32_t)((1LL << sdiv)/freq);
-    printf("sec: mul=%u, div=%u\n", smul, sdiv);
-
-    /*
-     *
-     */
-    for (nsdiv = 0; nsdiv < 56; nsdiv++) {
-        uint64_t tmp;
-        tmp = (billion << nsdiv)/freq;
-        if ((1LL << 32) <= tmp)
-            break;
-    }
-    nsdiv -= 1;
-    nsmul = (uint32_t)((billion << nsdiv)/freq);
-    printf("nsec: mul=%u, div=%u\n", nsmul, nsdiv);
-
+    int errcount = 0;
     nsdiff = 0;
     while (1) {
-        clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-        uint64_t vct = get_cntvct();
-        //printf("vct=%ld\n", vct);
+        clock_gettime(CLOCK_MONOTONIC_RAW, &sys_time);
+        vct = get_cntvct();
+        counter_to_timespec(vct, &c);
+        counter_to_timespec1(vct, &c2);
 
-        uint64_t hi, low;
-        uint64_t sec, nsec;
-        hi = (vct >> 32) * smul;
-        low = (vct & mask) * smul;;
-        sec = (hi >> (sdiv - 32)) + (low >> sdiv);
-        nsec = (((vct - sec * freq) * nsmul) >> nsdiv);
-        while (billion <= nsec) {
-            sec++;
-            nsec -= billion;
-        }
+        int64_t tdiff = (c.tv_sec - sys_time.tv_sec) * billion + c.tv_nsec - sys_time.tv_nsec;
 
-        uint64_t c_sec, c_nsec;
-        c_sec = vct / freq;
-        c_nsec = (vct - c_sec * freq) * billion / freq;
-
-        int64_t tdiff = (sec - ts.tv_sec) * billion + nsec - ts.tv_nsec;
-
-        printf("%9u.%09u %2d %2d %3d\n", (int)sec, (int)nsec,
-               (int)(sec - c_sec), (int)(nsec - c_nsec),
-               (int)(tdiff - nsdiff));
-        if (tdiff - nsdiff < -billion || billion < tdiff - nsdiff)
+        printf("%9u.%09u %2d %3d %4d %d\n", (int)c.tv_sec, (int)c.tv_nsec,
+               (int)(c.tv_sec - c2.tv_sec), (int)(c.tv_nsec - c2.tv_nsec),
+               (int)(tdiff - nsdiff), errcount);
+        if (tdiff - nsdiff < -billion || billion < tdiff - nsdiff) {
             nsdiff = tdiff;
+            errcount++;
+        }
         sleep(1);
     }
 }
