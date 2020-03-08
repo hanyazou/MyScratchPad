@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <string.h>
-#include "counter.h"
+#include <counter/counter.h>
 
 #define billion (1000000000LL)  /* < 1^32 = 4,294,967,296 */
 
