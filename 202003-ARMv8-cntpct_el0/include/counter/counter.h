@@ -1,61 +1,18 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <time.h>
+#ifndef COUNTER_COUNTER_H
+#define COUNTER_COUNTER_H
 
-static inline
-uint64_t get_cntfrq(void)
-{
-    uint64_t cv;
-    asm("isb");
-    asm volatile("mrs %0, cntfrq_el0" : "=r" (cv));
-    return cv;
- }
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-static inline
-uint64_t get_cntvct(void)
-{
-    uint64_t cv;
-    asm("isb");
-    asm volatile("mrs %0, cntvct_el0" : "=r" (cv));
-    return cv;
-}
+struct timespec *ts;
 
 int counter_init(void);
 void counter_show_params(void);
+int counter_gettime(struct timespec *ts);
 
-uint32_t counter_freq;
-
-static inline void
-counter_to_timespec(uint64_t vct, struct timespec *ts)
-{
-    uint64_t billion = (1000000000LL);  /* 1,000,000,000 < 1^32 = 4,294,967,296 */
-    ts->tv_sec = vct / counter_freq;
-    ts->tv_nsec = (vct % counter_freq) * billion / counter_freq;
+#ifdef __cplusplus
 }
+#endif
 
-void counter_to_timespec1(uint64_t vct, struct timespec *ts);
-void counter_to_timespec2(uint64_t vct, struct timespec *ts);
-void counter_to_timespec3(uint64_t vct, struct timespec *ts);
-
-static inline void
-counter_to_timespec4(uint64_t vct, struct timespec *ts)
-{
-    uint64_t billion = (1000000000LL);  /* 1,000,000,000 < 1^32 = 4,294,967,296 */
-    uint32_t freq = get_cntfrq();
-    ts->tv_sec = vct / freq;
-    ts->tv_nsec = (vct % freq) * billion / freq;
-}
-
-static inline void
-counter_gettime(volatile struct timespec *ts)
-{
-    uint64_t billion = (1000000000LL);  /* 1,000,000,000 < 1^32 = 4,294,967,296 */
-    uint64_t vct = get_cntvct();
-    uint32_t freq = get_cntfrq();
-    ts->tv_sec = vct / freq;
-    ts->tv_nsec = (vct % freq) * billion / freq;
-}
-
-void counter_gettime1(struct timespec *ts);
-void counter_gettime2(struct timespec *ts);
+#endif /* COUNTER_COUNTER_H */

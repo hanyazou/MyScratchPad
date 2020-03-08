@@ -1,11 +1,9 @@
 #include <stdio.h>
-#include <stdint.h>
 #include <unistd.h>
-#include <time.h>
 #include <string.h>
 #include <counter/counter.h>
-
-#define billion (1000000000LL)  /* < 1^32 = 4,294,967,296 */
+#include <counter_priv.h>
+#include <counter_test.h>
 
 int
 printcomma2(char *bp, int64_t n)
@@ -52,11 +50,11 @@ main(int ac, char *av[])
     counter_show_params();
 
     vct = get_cntvct();
-    counter_to_timespec(vct, &c);
+    counter_to_timespec4(vct, &c);
     tmp = c.tv_sec;
     while (tmp == c.tv_sec) {
         vct = get_cntvct();
-        counter_to_timespec(vct, &c);
+        counter_to_timespec4(vct, &c);
     }
 
     {
@@ -67,60 +65,65 @@ main(int ac, char *av[])
         char *test_desc;
         uint32_t duration;
             
-        for (test_case = 0; test_case <= 7; test_case++) {
+        for (test_case = 1; test_case <= 9; test_case++) {
             clock_gettime(CLOCK_REALTIME, &st);
             switch (test_case) {
-            case 0:
+            case 1:
                 test_desc = "  call counter_to_timespec1() w/o div";
                 for (i = 0; i < iteration; i++) {
                     vct = get_cntvct();
                     counter_to_timespec1(vct, &c);
                 }
                 break;
-            case 1:
+            case 2:
                 test_desc = "  call counter_to_timespec2() with div";
                 for (i = 0; i < iteration; i++) {
                     vct = get_cntvct();
                     counter_to_timespec2(vct, &c);
                 }
                 break;
-            case 2:
-                test_desc = "  call counter_to_timespec2() with div w/o struct";
+            case 3:
+                test_desc = "inline counter_to_timespec3() w/o initialization";
                 for (i = 0; i < iteration; i++) {
                     vct = get_cntvct();
                     counter_to_timespec3(vct, &c);
                 }
                 break;
-            case 3:
-                test_desc = "inline counter_to_timespec4() w/o initialization";
+            case 4:
+                test_desc = "inline counter_to_timespec4() with div";
                 for (i = 0; i < iteration; i++) {
                     vct = get_cntvct();
                     counter_to_timespec4(vct, &c);
                 }
                 break;
-            case 4:
-                test_desc = "inline counter_to_timespec() with div";
-                for (i = 0; i < iteration; i++) {
-                    vct = get_cntvct();
-                    counter_to_timespec(vct, &c);
-                }
-                break;
             case 5:
-                test_desc = "inline counter_gettime() w/o initialization";
-                for (i = 0; i < iteration; i++) {
-                    counter_gettime(&c);
-                }
-                break;
-            case 6:
-                test_desc = "  call counter_gettime1() w/o div";
+                test_desc = "inline counter_gettime1() w/o initialization";
                 for (i = 0; i < iteration; i++) {
                     counter_gettime1(&c);
                 }
                 break;
-            case 7:
-                test_desc = "  call counter_gettime1() with div";
+            case 6:
+                test_desc = "inline counter_gettime2() w/o div";
                 for (i = 0; i < iteration; i++) {
                     counter_gettime2(&c);
+                }
+                break;
+            case 7:
+                test_desc = "  call counter_gettime3() w/o div";
+                for (i = 0; i < iteration; i++) {
+                    counter_gettime3(&c);
+                }
+                break;
+            case 8:
+                test_desc = "  call counter_gettime4() with div (static link)";
+                for (i = 0; i < iteration; i++) {
+                    counter_gettime4(&c);
+                }
+                break;
+            case 9:
+                test_desc = "  call counter_gettime() with div (dynamic link)";
+                for (i = 0; i < iteration; i++) {
+                    counter_gettime(&c);
                 }
                 break;
             }
