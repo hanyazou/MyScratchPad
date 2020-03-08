@@ -2,9 +2,41 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <time.h>
+#include <string.h>
 #include "counter.h"
 
 #define billion (1000000000LL)  /* < 1^32 = 4,294,967,296 */
+
+int
+printcomma2(char *bp, int64_t n)
+{
+    char *p = bp;
+    if (n < 1000) {
+        return sprintf(bp, "%d", (int)n);
+    }
+    p += printcomma2(p, n/1000);
+    p += sprintf(p, ",%03d", (int)(n%1000));
+    return p - bp;
+}
+
+char*
+printcomma(int64_t n)
+{
+    static int indx = 0;
+    static char buf[5][32];
+    static char *bp;
+
+    if (5 <= ++indx)
+        indx = 0;
+    bp = buf[indx];
+
+    if (n < 0) {
+        bp += sprintf(bp, "-");
+        n = -n;
+    }
+    printcomma2(bp, n);
+    return buf[indx];
+}
 
 int
 main(int ac, char *av[])
@@ -12,8 +44,9 @@ main(int ac, char *av[])
     uint64_t vct;
     struct timespec sys_time;
     struct timespec c;
-    struct timespec c2;
+    struct timespec c1, c2;
     time_t tmp;
+    char buf[32];
 
     counter_init();
     counter_show_params();
@@ -99,24 +132,36 @@ main(int ac, char *av[])
         }
     }
 
-    int64_t nsdiff;
-    int errcount = 0;
-    nsdiff = 0;
+    int64_t nsdiff1 = 0;
+    int64_t nsdiff2 = 0;
+    int errcount1 = 0;
+    int errcount2 = 0;
+
     while (1) {
-        clock_gettime(CLOCK_MONOTONIC_RAW, &sys_time);
-        vct = get_cntvct();
-        counter_to_timespec(vct, &c);
-        counter_to_timespec1(vct, &c2);
+        counter_gettime(&c);
+        clock_gettime(CLOCK_REALTIME, &c1);
+        clock_gettime(CLOCK_MONOTONIC_RAW, &c2);
 
-        int64_t tdiff = (c.tv_sec - sys_time.tv_sec) * billion + c.tv_nsec - sys_time.tv_nsec;
+        int64_t tdiff1 = (c.tv_sec - c1.tv_sec) * billion + c.tv_nsec - c1.tv_nsec;
+        int64_t tdiff2 = (c.tv_sec - c2.tv_sec) * billion + c.tv_nsec - c2.tv_nsec;
 
-        printf("%9u.%09u %2d %3d %4d %d\n", (int)c.tv_sec, (int)c.tv_nsec,
-               (int)(c.tv_sec - c2.tv_sec), (int)(c.tv_nsec - c2.tv_nsec),
-               (int)(tdiff - nsdiff), errcount);
-        if (tdiff - nsdiff < -billion || billion < tdiff - nsdiff) {
-            nsdiff = tdiff;
-            errcount++;
+        time(&tmp);
+        ctime_r(&tmp, buf);
+        if (buf[strlen(buf)-1] == '\n')
+            buf[strlen(buf)-1] = '\0';
+        printf("%s: %9u.%09u %14s (%d) %14s (%d)\n",
+               buf,
+               (int)c.tv_sec, (int)c.tv_nsec,
+               printcomma(tdiff1 - nsdiff1), errcount1,
+               printcomma(tdiff2 - nsdiff2), errcount2);
+        if (tdiff1 - nsdiff1 < -billion || billion < tdiff1 - nsdiff1) {
+            nsdiff1 = tdiff1;
+            errcount1++;
         }
-        sleep(1);
+        if (tdiff2 - nsdiff2 < -billion || billion < tdiff2 - nsdiff2) {
+            nsdiff2 = tdiff2;
+            errcount2++;
+        }
+        sleep(300);
     }
 }
