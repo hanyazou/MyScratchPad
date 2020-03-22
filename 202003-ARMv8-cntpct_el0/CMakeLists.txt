@@ -45,3 +45,11 @@ add_executable(test2
 target_link_libraries(test2
     counter
 )
+
+add_executable(test3
+    test/test3.c
+)
+target_link_libraries(test3
+    counter
+    pthread
+)
