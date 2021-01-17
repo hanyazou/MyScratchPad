@@ -9,11 +9,12 @@ interface LogOutputFunction {
 public class Utils {
     private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
 
-    public static int getUint32(byte[] buf, int ofs) {
-        return (buf[ofs + 0] << 24) | (buf[ofs + 1] << 16) | (buf[ofs + 2] << 8) | buf[ofs + 3];
+    public static long getUint32(byte[] buf, int ofs) {
+        return (buf[ofs + 0] & 0xff) << 24 | (buf[ofs + 1] & 0xff) << 16 |
+            (buf[ofs + 2]  & 0xff) << 8 | (buf[ofs + 3] & 0xff);
     }
 
-    public static void putUint32(byte[] buf, int ofs, int val) {
+    public static void putUint32(byte[] buf, int ofs, long val) {
         buf[ofs + 0] = (byte)((val >> 24) & 0xff);
         buf[ofs + 1] = (byte)((val >> 16) & 0xff);
         buf[ofs + 2] = (byte)((val >>  8) & 0xff);

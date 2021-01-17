@@ -71,32 +71,27 @@ public class AoaTest implements Runnable {
     }
 
     public void run() {
-        int testInputCount = 0;
-        int testInputCRC = 0;
+        long testInputCount = 0;
+        long testInputCRC = 0;
         boolean testInputNoCRC = true;
         Checksum testInputChecksum = null;
         long testInputStart = 0;
         long testInputEnd = 0;
         int inputTotal = 0;
 
-        int testOutputCount = 0;
-        int testOutputCRC = 0;
+        long testOutputCount = 0;
+        long testOutputCRC = 0;
         boolean testOutputNoCRC = true;
         Checksum testOutputChecksum = null;
         long testOutputStart = 0;
         long testOutputEnd = 0;
         int outputTotal = 0;
 
-        final int HEADER_SIZE = 8;
         final int BUFFER_SIZE = 1024*1024;
         byte[] buf = new byte[BUFFER_SIZE];
         int n;
 
         try {
-            Thread.sleep(1000);
-            String str = "Hello";
-            send(str.getBytes());
-
             while (true) {
                 if (0 < testInputCount || 0 < testOutputCount) {
                     /*
@@ -106,25 +101,22 @@ public class AoaTest implements Runnable {
                         /*
                          * receive test data stream
                          */
-                        n = Math.min(Math.min(testInputCount, BUFFER_SIZE),
-                                     mInputStream.available());
+                        n = (int)Math.min(testInputCount, BUFFER_SIZE);
                         n = mInputStream.read(buf, 0, n);
                         if (!testInputNoCRC)
                             testInputChecksum.update(buf, 0, n);
                         testInputCount -= n;
                         inputTotal += n;
-                        log_d(String.format("%d bytes recieved, %d bytes remain, CRC=%08x",
-                                            n, testInputCount, testInputCRC));
+                        log_d(String.format("%d bytes recieved, %d bytes remain",
+                                            n, testInputCount));
                         if (testInputCount == 0) {
                             long crc = 0;
-                            log_d(String.format("%d bytes in the buffer",
-                                                mInputStream.available()));
                             testInputEnd = System.currentTimeMillis();
                             n = mInputStream.read(buf, 0, 4);
                             assert n == 4;
                             crc = Utils.getUint32(buf, 4);
                             if (!testInputNoCRC)
-                                testInputCRC = (int)testInputChecksum.getValue();
+                                testInputCRC = testInputChecksum.getValue();
                             testInputChecksum = null;
                             log_i(String.format("%d bytes recieved in %7.3f sec, CRC: %08x%s%08x",
                                   inputTotal,
@@ -139,18 +131,17 @@ public class AoaTest implements Runnable {
                         /*
                          * send test data stream
                          */
-                        n = Math.min(testOutputCount, BUFFER_SIZE);
+                        n = (int)Math.min(testOutputCount, BUFFER_SIZE);
                         mOutputStream.write(buf, 0, n);
                         if (!testOutputNoCRC)
                             testOutputChecksum.update(buf, 0, n);
                         testOutputCount -= n;
                         outputTotal += n;
-                        log_d(String.format("%d bytes sent, %d bytes remain, CRC=%08x",
-                                            n, testInputCount, testInputCRC));
+                        log_d(String.format("%d bytes sent, %d bytes remain", n, testOutputCount));
                         if (testOutputCount == 0) {
                             testOutputEnd  = System.currentTimeMillis();
                             if (!testOutputNoCRC)
-                                testOutputCRC = (int)testOutputChecksum.getValue();
+                                testOutputCRC = testOutputChecksum.getValue();
                             testOutputChecksum = null;
                             Utils.putUint32(buf, 0, testOutputCRC);
                             mOutputStream.write(buf, 0, 4);
@@ -165,9 +156,8 @@ public class AoaTest implements Runnable {
                      * receive command
                      */
                     String command = null;
-                    //n = mInputStream.read(buf, 0, HEADER_SIZE);
                     n = mInputStream.read(buf, 0, BUFFER_SIZE);
-                    if (HEADER_SIZE <= n) {
+                    if (4 <= n) {
                         Utils.dumpHex(buf, 0, n, (line) -> {
                                 log_i(String.format("HEADER: %s", line)); });
                         command = new String(Arrays.copyOfRange(buf, 0, 4),
@@ -188,7 +178,7 @@ public class AoaTest implements Runnable {
                         testInputCount = Utils.getUint32(buf, 4);
                         testInputStart = System.currentTimeMillis();
                         testInputEnd = 0;
-                        log_i(String.format("testInputCount=%u CRC=%08x",
+                        log_i(String.format("testInputCount=%d CRC=%08x",
                                             testInputCount, testInputCRC));
                     } else
                     if (command != null && (command.equals("\\TSC") || command.equals("\\TS_"))) {
@@ -202,13 +192,13 @@ public class AoaTest implements Runnable {
                             testOutputNoCRC = true;
                         }
                         testOutputCRC = 0x01234567;
-                        // FIXME: should be filled with random data
-                        Arrays.fill(buf, (byte)0);
                         testOutputCount = Utils.getUint32(buf, 4);
                         testOutputStart = System.currentTimeMillis();
                         testOutputEnd = 0;
                         log_i(String.format("testOutputCount=%d CRC=%08x",
                                             testOutputCount, testOutputCRC));
+                        // FIXME: should be filled with random data
+                        Arrays.fill(buf, (byte)0);
                     } else
                     if (command != null && command.equals("\\TGS")) {
                         /*
@@ -239,9 +229,18 @@ public class AoaTest implements Runnable {
                         /*
                          * command: message from accessory
                          */
-                        n = Utils.getUint32(buf, 4);
+                        n = (int)Utils.getUint32(buf, 4);
                         log_i(String.format("Message %d bytes from accessory", n));
                         Utils.dumpHex(buf, 8, n, (line) -> { log_i(line); });
+                    } else
+                    if (command != null && command.equals("\\ECH")) {
+                        /*
+                         * command: echo
+                         */
+                        n = (int)Utils.getUint32(buf, 4);
+                        log_i(String.format("Echo %d bytes to accessory", n));
+                        Utils.dumpHex(buf, 8, n, (line) -> { log_i(line); });
+                        send(Arrays.copyOfRange(buf, 8, 8 + n));
                     } else
                     {
                         log_i("Unknown command from accessory");
