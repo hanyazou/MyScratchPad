@@ -73,7 +73,7 @@ public class AoaTest implements Runnable {
                 break;
             }
             Log.d(TAG, ret + " bytes read from USB accessory.");
-            Log.d(TAG, Utils.bytesToHex(buffer));
+            Utils.dumpHex(buffer, ret, (line) -> { Log.d(TAG, line); });
         }
         Log.d(TAG, "thread terminated.");
     }
