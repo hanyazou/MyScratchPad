@@ -1,0 +1,7 @@
+
+% cd 20210530-ble-plugin
+% python3 -m venv venv
+% source venv/bin/activate
+(venv) python3 -m pip install --upgrade pip
+(venv) pip install bleak
+Successfully installed bleak-0.11.0 pyobjc-core-7.2 pyobjc-framework-Cocoa-7.2 pyobjc-framework-CoreBluetooth-7.2 pyobjc-framework-libdispatch-7.2
