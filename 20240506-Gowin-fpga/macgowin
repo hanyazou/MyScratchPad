@@ -1,0 +1,73 @@
+#!/bin/bash -xe
+
+IMAGENAME=gowin_eda
+USER=user
+CWD=$( pwd | sed -e "s|$( cd && pwd )/||" )
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+main()
+{
+    # remove_image
+    # build_image
+    prepare_script
+    run
+}
+
+cleanup_containers()
+{
+    local id=$( docker ps -a --filter ancestor=${IMAGENAME} | grep -v -e '^CONTAINER ID' | awk '{ print $1 }' )
+    if [ "${id}" != "" ]; then
+        docker stop ${id}
+        docker rm ${id}
+    fi
+}
+
+remove_image()
+{
+    cleanup_containers
+    local image_id=$( docker images | grep "^${IMAGENAME} " | awk '{ print $3 }' )
+    if [ "${image_id}" != "" ]; then
+        echo docker rmi ${image_id} ${IMAGENAME}
+        docker rmi ${image_id} # ${IMAGENAME}
+    fi
+}
+
+build_image()
+{
+    ( cd ${script_dir} &&
+        docker build --network=host --file Dockerfile \
+               --build-arg="UID=$(id -u)" \
+               --build-arg="GID=$(id -g)" \
+               --build-arg="USER=${USER}" \
+               --build-arg="GOWIN=Gowin_V1.9.9Beta-4_Education" \
+               --tag ${IMAGENAME} . )
+}
+
+prepare_script()
+{
+    src=/home/user/workspace/shared/workspace/github/tangnano-5V/applications/TangNanoZ80MEM/TangNanoZ80MEM_project/src
+    cat <<EOF > ~/${CWD}/.gowin_script.tmp
+        add_file ${src}/top.v
+        add_file ${src}/uart.v
+        add_file ${src}/ws2812.v
+        add_file ${src}/gowin_rpll/gowin_rpll.v
+        set_device GW2AR-LV18QN88C8/I7
+        run all
+EOF
+}
+
+run()
+{
+    local id=$( docker ps | grep -e " gowin_eda-i$" )
+    if [ "${id}" == "" ]; then
+        docker run -it -d --name ${IMAGENAME}-i \
+            --volume="${HOME}/workspace:/home/user/workspace:rw" \
+            --volume="${HOME}/.Xauthority:/home/user/.Xauthority:ro" \
+            --env DISPLAY=host.docker.internal:0 \
+            ${IMAGENAME}
+    fi
+    docker exec -it ${IMAGENAME}-i \
+        /bin/bash -c "cd ${CWD} && gw_sh .gowin_script.tmp"
+}
+
+main $*
