@@ -1,16 +1,82 @@
 #!/bin/bash -xe
 
+BOARD=tangnano20k
+DEVICE=GW2AR-LV18QN88C8/I7
 IMAGENAME=gowin_eda
 USER=user
 CWD=$( pwd | sed -e "s|$( cd && pwd )/||" )
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
+usage()
+{
+    echo macgowin [options] commans ...
+}
+
 main()
 {
-    # remove_image
-    # build_image
-    prepare_script
-    run
+    local args=()
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+        --help)
+            usage
+            shift
+            ;;
+        -*|--*)
+            echo "Unknown option $1"
+            exit 1
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+        esac
+    done
+
+    set -- "${args[@]}"
+
+    local done=false
+    local exec_ide=false
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+        remove_image)
+            remove_image
+            ;;
+        build)
+            generate_script
+            run_container
+            docker exec -it ${IMAGENAME}-i \
+                /bin/bash -c "cd ${CWD} && gw_sh .gowin_script.tmp"
+            ;;
+        shell)
+            run_container
+            docker exec -it ${IMAGENAME}-i \
+                /bin/bash -c "cd ${CWD} && exec /bin/bash"
+            ;;
+        ide)
+            exec_ide=true
+            ;;
+        flash)
+            openFPGALoader --board "${BOARD}" --write-flash impl/pnr/project.fs
+            ;;
+        run)
+            openFPGALoader --board "${BOARD}" impl/pnr/project.fs
+            ;;
+        *)
+            echo "Unknown command $1"
+            exit 1
+            ;;
+        esac
+        shift
+        done=true
+    done
+
+    if ! $done || $exec_ide; then
+        xhost +localhost
+        run_container
+        docker exec -it ${IMAGENAME}-i \
+            /bin/bash -c gw_ide
+    fi
 }
 
 cleanup_containers()
@@ -22,11 +88,25 @@ cleanup_containers()
     fi
 }
 
+image_id()
+{
+    docker images | grep "^${IMAGENAME} " | awk '{ print $3 }'
+}
+
+image_exist()
+{
+    if [ "$( image_id )" != "" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 remove_image()
 {
     cleanup_containers
-    local image_id=$( docker images | grep "^${IMAGENAME} " | awk '{ print $3 }' )
-    if [ "${image_id}" != "" ]; then
+    if image_exist; then
+        local image_id=$( image_id )
         echo docker rmi ${image_id} ${IMAGENAME}
         docker rmi ${image_id} # ${IMAGENAME}
     fi
@@ -39,11 +119,11 @@ build_image()
                --build-arg="UID=$(id -u)" \
                --build-arg="GID=$(id -g)" \
                --build-arg="USER=${USER}" \
-               --build-arg="GOWIN=Gowin_V1.9.9Beta-4_Education" \
+               --build-arg="GOWIN=Gowin_V1.9.9.03_Education_linux" \
                --tag ${IMAGENAME} . )
 }
 
-prepare_script()
+generate_script()
 {
     src=/home/user/workspace/shared/workspace/github/tangnano-5V/applications/TangNanoZ80MEM/TangNanoZ80MEM_project/src
     cat <<EOF > ~/${CWD}/.gowin_script.tmp
@@ -51,13 +131,21 @@ prepare_script()
         add_file ${src}/uart.v
         add_file ${src}/ws2812.v
         add_file ${src}/gowin_rpll/gowin_rpll.v
-        set_device GW2AR-LV18QN88C8/I7
+        add_file ${src}/tn20k.cst
+        set_device "${DEVICE}"
+        set_option -top_module top
+        set_option -verilog_std v2001
+        set_option -cst_warn_to_error 1
+        set_option -use_sspi_as_gpio 1
         run all
 EOF
 }
 
-run()
+run_container()
 {
+    if ! image_exist; then
+        build_image
+    fi
     local id=$( docker ps | grep -e " gowin_eda-i$" )
     if [ "${id}" == "" ]; then
         docker run -it -d --name ${IMAGENAME}-i \
@@ -66,8 +154,6 @@ run()
             --env DISPLAY=host.docker.internal:0 \
             ${IMAGENAME}
     fi
-    docker exec -it ${IMAGENAME}-i \
-        /bin/bash -c "cd ${CWD} && gw_sh .gowin_script.tmp"
 }
 
 main $*
