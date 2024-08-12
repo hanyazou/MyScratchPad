@@ -1,0 +1,11 @@
+add_file ${PJD}/src/top.v
+add_file ${PJD}/src/uart.v
+add_file ${PJD}/src/ws2812.v
+add_file ${PJD}/src/gowin_rpll/gowin_rpll.v
+add_file ${PJD}/src/tn20k.cst
+set_device "${DEVICE}"
+set_option -top_module top
+set_option -verilog_std v2001
+set_option -cst_warn_to_error 1
+set_option -use_sspi_as_gpio 1
+run all
