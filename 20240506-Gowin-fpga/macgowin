@@ -1,24 +1,32 @@
-#!/bin/bash -xe
+#!/bin/bash -e
 
 BOARD=tangnano20k
 DEVICE=GW2AR-LV18QN88C8/I7
 IMAGENAME=gowin_eda
 USER=user
-CWD=$( pwd | sed -e "s|$( cd && pwd )/||" )
+CWD=$( cd $( pwd ) &> /dev/null && pwd | sed -e "s|$( cd && pwd )/||" )
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+home_in_container=/home/$USER
 
 usage()
 {
-    echo macgowin [options] commans ...
+    echo "macgowin [options] commans ..."
+    echo
+    echo "examples:"
+    echo "    macgowin build examples/TangNanoZ80MEM run"
+    echo "    macgowin flash"
+    echo "    macgowin remove_image"
 }
 
 main()
 {
     local args=()
 
+    opt_out_dir=.
+
     while [[ $# -gt 0 ]]; do
         case $1 in
-        --help)
+        -h|--help)
             usage
             shift
             ;;
@@ -43,10 +51,16 @@ main()
             remove_image
             ;;
         build)
-            generate_script
+            mkdir -p ${opt_out_dir}/impl
+            shift
+            if [ "$1" = "" ]; then
+                usage
+                exit 1
+            fi
+            generate_script "$1"
             run_container
             docker exec -it ${IMAGENAME}-i \
-                /bin/bash -c "cd ${CWD} && gw_sh .gowin_script.tmp"
+                /bin/bash -c "cd ${CWD} && gw_sh ${opt_out_dir}/impl/.gowin_script.tmp"
             ;;
         shell)
             run_container
@@ -57,10 +71,10 @@ main()
             exec_ide=true
             ;;
         flash)
-            openFPGALoader --board "${BOARD}" --write-flash impl/pnr/project.fs
+            openFPGALoader --board "${BOARD}" --write-flash ${opt_out_dir}/impl/pnr/project.fs
             ;;
         run)
-            openFPGALoader --board "${BOARD}" impl/pnr/project.fs
+            openFPGALoader --board "${BOARD}" ${opt_out_dir}/impl/pnr/project.fs
             ;;
         *)
             echo "Unknown command $1"
@@ -123,22 +137,27 @@ build_image()
                --tag ${IMAGENAME} . )
 }
 
+path_in_container()
+{
+    local path="$1"
+    echo "${home_in_container}/$( echo "$path" | sed -e "s|$( cd && pwd )/||" )"
+}
+
 generate_script()
 {
-    src=/home/user/workspace/shared/workspace/github/tangnano-5V/applications/TangNanoZ80MEM/TangNanoZ80MEM_project/src
-    cat <<EOF > ~/${CWD}/.gowin_script.tmp
-        add_file ${src}/top.v
-        add_file ${src}/uart.v
-        add_file ${src}/ws2812.v
-        add_file ${src}/gowin_rpll/gowin_rpll.v
-        add_file ${src}/tn20k.cst
-        set_device "${DEVICE}"
-        set_option -top_module top
-        set_option -verilog_std v2001
-        set_option -cst_warn_to_error 1
-        set_option -use_sspi_as_gpio 1
-        run all
-EOF
+    case "$1" in
+    /*)
+        PJD="$( path_in_container "$1" )"
+        ;;
+    *)        
+        PJD="${home_in_container}/${CWD}/$1"
+        ;;
+    esac
+    cat "$1/gw_sh.script" | \
+        sed -e "s|\${PJD}|${PJD}|g" \
+            -e "s|\${DEVICE}|${DEVICE}|g" \
+            > ${opt_out_dir}/impl/.gowin_script.tmp
+    cat ${opt_out_dir}/impl/.gowin_script.tmp
 }
 
 run_container()
@@ -149,8 +168,8 @@ run_container()
     local id=$( docker ps | grep -e " gowin_eda-i$" )
     if [ "${id}" == "" ]; then
         docker run -it -d --name ${IMAGENAME}-i \
-            --volume="${HOME}/workspace:/home/user/workspace:rw" \
-            --volume="${HOME}/.Xauthority:/home/user/.Xauthority:ro" \
+            --volume="${HOME}/workspace:${home_in_container}/workspace:rw" \
+            --volume="${HOME}/.Xauthority:${home_in_container}/.Xauthority:ro" \
             --env DISPLAY=host.docker.internal:0 \
             ${IMAGENAME}
     fi
