@@ -21,6 +21,11 @@ RUN (groupadd -g $GID $GROUP || groupmod -g $GID $GROUP || true) && \
     echo $USER:$PASSWORD | chpasswd && \
     echo "$USER   ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+ADD $GOWIN.tar.gz /usr/local/bin/gowin
+RUN set -eux; \
+    cd /usr/local/bin/gowin && \
+    mv ./IDE/lib/libfreetype.so.6 ./IDE/lib/libfreetype.so.6.BACKUP
+
 ENV LANG en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 ENV PATH /usr/local/bin/gowin/IDE/bin:/usr/local/bin/gowin/Programmer/bin:$PATH
@@ -28,4 +33,5 @@ ENV PATH /usr/local/bin/gowin/IDE/bin:/usr/local/bin/gowin/Programmer/bin:$PATH
 USER $USER
 WORKDIR /home/$USER/
 
-ADD $GOWIN.tar.gz /usr/local/bin/gowin
+RUN set -eux; \
+    echo "PS1='\\w\\$ '" >> ~/.bashrc
