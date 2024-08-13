@@ -1,0 +1,7 @@
+add_file ${PJD}/led.v
+add_file ${PJD}/${BOARD}.cst
+set_device "${DEVICE}"
+set_option -top_module led
+set_option -verilog_std v2001
+set_option -cst_warn_to_error 1
+run all

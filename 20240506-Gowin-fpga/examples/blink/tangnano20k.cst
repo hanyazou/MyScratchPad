@@ -1,0 +1,7 @@
+// LED[0]
+IO_LOC "IO_voltage" 15;
+IO_PORT "IO_voltage" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
+
+// Clock
+IO_LOC "Clock" 4;
+IO_PORT "Clock" PULL_MODE=UP BANK_VCCIO=1.8;
