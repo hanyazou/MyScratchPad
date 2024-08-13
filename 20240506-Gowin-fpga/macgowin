@@ -159,6 +159,7 @@ generate_script()
     cat "$1/gw_sh.script" | \
         sed -e "s|\${PJD}|${PJD}|g" \
             -e "s|\${DEVICE}|${DEVICE}|g" \
+            -e "s|\${BOARD}|${BOARD}|g" \
             > ${opt_out_dir}/impl/.gowin_script.tmp
     cat ${opt_out_dir}/impl/.gowin_script.tmp
 }
